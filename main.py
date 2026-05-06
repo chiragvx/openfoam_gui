@@ -12,6 +12,7 @@ from gui.main_window import MainWindow
 def main():
     config.LOGS_DIR.mkdir(parents=True, exist_ok=True)
     config.CASES_DIR.mkdir(parents=True, exist_ok=True)
+    config.STUDIES_DIR.mkdir(parents=True, exist_ok=True)
 
     configure_logging()
     log = logging.getLogger(__name__)

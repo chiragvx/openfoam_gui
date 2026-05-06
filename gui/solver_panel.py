@@ -117,7 +117,26 @@ class SolverPanel(QWidget):
             self._mw.set_status("Solver done — go to Results tab")
             self._mw.results_panel.set_case_dir(self._case_dir)
             log.info("Solver complete")
+            
+            # Auto-save study if available
+            main_win = self.window()
+            if hasattr(main_win, "_save_study"):
+                if hasattr(main_win, "_current_study") and main_win._current_study:
+                    try:
+                        from core.results_reader import ResultsReader
+                        coeffs = ResultsReader.read_force_coeffs(self._case_dir)
+                        main_win._current_study.results = {**coeffs, "solved": True}
+                        main_win._current_study.case_dir = self._case_dir
+                    except Exception:
+                        pass
+                main_win._save_study()
         else:
             self._status.setText(f"FAILED: {msg}")
             self._mw.set_status("Solver FAILED — check log")
             log.error(f"Solver failed: {msg}")
+
+    def set_settings(self, d: dict) -> None:
+        if "end_time" in d:
+            self._iters.setValue(d["end_time"])
+        if "n_cores" in d:
+            self._cores.setValue(d["n_cores"])

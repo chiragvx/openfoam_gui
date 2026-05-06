@@ -2,7 +2,7 @@ import logging
 from pathlib import Path
 
 import pyvista as pv
-from PyQt6.QtCore import Qt, QThread, pyqtSignal
+from PyQt6.QtCore import Qt, QThread, pyqtSignal, QTimer
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
     QGroupBox, QFormLayout, QComboBox, QSpinBox, QDoubleSpinBox, QSlider,
@@ -12,11 +12,11 @@ log = logging.getLogger(__name__)
 
 
 _FIELDS = [
-    ("Pressure (p)",           "p"),
-    ("Velocity magnitude (U)", "U"),
-    ("Wall shear stress",      "wallShearStress"),
-    ("Turbulence k",           "k"),
-    ("Turbulence ω",           "omega"),
+    ("Airflow Speed (U)",           "U"),
+    ("Air Pressure (p)",            "p"),
+    ("Surface Friction (Skin Drag)", "wallShearStress"),
+    ("Turbulence (Noise Source)",    "k"),
+    ("Vortex Energy (Omega)",        "omega"),
 ]
 
 _AXIS_STYLE_ON  = "font-weight:bold; background:#4a90d9; color:white; border-radius:4px;"
@@ -120,10 +120,14 @@ class ResultsPanel(QWidget):
         super().__init__()
         self._mw           = main_window
         self._case_dir: str | None = None
-        self._domain_shown = True
+        self._domain_shown = False
         self._stream_axis   = "Y"
         self._stream_offset = 0.0
+        self._streamlines_active = False
         self._stream_worker: QThread | None = None
+        self._stream_timer = QTimer()
+        self._stream_timer.setSingleShot(True)
+        self._stream_timer.timeout.connect(self._on_show_streamlines)
         self._setup_ui()
 
     # ------------------------------------------------------------------
@@ -174,6 +178,7 @@ class ResultsPanel(QWidget):
         self._stream_n = QSpinBox()
         self._stream_n.setRange(5, 60)
         self._stream_n.setValue(20)
+        self._stream_n.setFixedWidth(100)
         self._stream_n.setToolTip("Number of seed lines along the chosen axis")
         lines_form.addRow("Lines:", self._stream_n)
         stream_vbox.addLayout(lines_form)
@@ -184,15 +189,15 @@ class ResultsPanel(QWidget):
         self._offset_label.setFixedWidth(90)
         self._offset_spin = QDoubleSpinBox()
         self._offset_spin.setRange(-5.0, 5.0)
-        self._offset_spin.setSingleStep(0.05)
+        self._offset_spin.setSingleStep(0.001)
         self._offset_spin.setValue(0.0)
-        self._offset_spin.setDecimals(2)
-        self._offset_spin.setFixedWidth(70)
-        self._offset_spin.setToolTip("Offset seed line from model centre (metres)")
+        self._offset_spin.setDecimals(3)
+        self._offset_spin.setFixedWidth(100)
+        self._offset_spin.setToolTip("Offset seed line from model centre (metres) — 1mm precision")
         self._offset_slider = QSlider(Qt.Orientation.Horizontal)
-        self._offset_slider.setRange(-100, 100)   # maps to ±5.0 m  (0.05 m/step)
+        self._offset_slider.setRange(-5000, 5000)   # maps to ±5.0 m (0.001 m/step)
         self._offset_slider.setValue(0)
-        self._offset_slider.setToolTip("Drag to offset streamline seed")
+        self._offset_slider.setToolTip("Drag to offset streamline seed (1mm increments)")
 
         offset_row.addWidget(self._offset_label)
         offset_row.addWidget(self._offset_spin)
@@ -252,15 +257,22 @@ class ResultsPanel(QWidget):
         self._stream_offset = value
         # Update slider without triggering its own signal back
         self._offset_slider.blockSignals(True)
-        self._offset_slider.setValue(round(value / 0.05))
+        self._offset_slider.setValue(round(value / 0.001))
         self._offset_slider.blockSignals(False)
+        self._maybe_auto_update()
 
     def _on_offset_slider_changed(self, slider_val: int):
-        value = round(slider_val * 0.05, 2)
+        value = round(slider_val * 0.001, 3)
         self._stream_offset = value
         self._offset_spin.blockSignals(True)
         self._offset_spin.setValue(value)
         self._offset_spin.blockSignals(False)
+        self._maybe_auto_update()
+
+    def _maybe_auto_update(self):
+        if self._streamlines_active:
+            # Debounce by 200ms to avoid spamming VTK
+            self._stream_timer.start(200)
 
     # ------------------------------------------------------------------
     def set_case_dir(self, case_dir: str):
@@ -283,8 +295,8 @@ class ResultsPanel(QWidget):
         self._mw.viewport.show_results(self._case_dir, field)
         self._mw.viewport.show_wind_arrow(cond["airspeed"], cond["aoa_deg"])
 
-        self._domain_shown = True
-        self._domain_btn.setText("Hide Domain Box")
+        self._domain_shown = False
+        self._domain_btn.setText("Show Domain Box")
         self._domain_btn.setEnabled(True)
 
         self._load_aero_summary(cond)
@@ -303,11 +315,17 @@ class ResultsPanel(QWidget):
     def _on_show_streamlines(self):
         if not self._case_dir:
             return
+        
+        # If worker is already running, wait/ignore to avoid VTK collisions
+        if self._stream_worker and self._stream_worker.isRunning():
+            self._stream_timer.start(100) # retry soon
+            return
+
         n = self._stream_n.value()
+        self._streamlines_active = True
         self._stream_show_btn.setEnabled(False)
         self._stream_clear_btn.setEnabled(False)
         self._status.setText(f"Computing {n} streamlines ({self._stream_axis}-plane)…")
-        self._mw.set_status("Computing streamlines…")
 
         self._stream_worker = _StreamlineWorker(
             self._case_dir,
@@ -335,6 +353,8 @@ class ResultsPanel(QWidget):
         self._mw.set_status("Streamlines failed")
 
     def _on_clear_streamlines(self):
+        self._streamlines_active = False
+        self._stream_timer.stop()
         self._mw.viewport.clear_streamlines()
         self._status.setText("Streamlines cleared")
 

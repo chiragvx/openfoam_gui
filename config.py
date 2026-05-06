@@ -13,6 +13,7 @@ else:
 LOGS_DIR      = APP_DIR     / "logs"
 TEMPLATES_DIR = _BUNDLE_DIR / "templates"
 CASES_DIR     = APP_DIR     / "cases"
+STUDIES_DIR   = APP_DIR     / "studies"
 
 # WSL2 integration — confirmed via `wsl -l`
 WSL_DISTRO = "Ubuntu-22.04"

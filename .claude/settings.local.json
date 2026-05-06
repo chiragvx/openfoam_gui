@@ -51,7 +51,28 @@
       "Bash(xargs '-I{}' sh -c ' *)",
       "Bash(grep -v '^$')",
       "Bash(awk '{print $1, $2}')",
-      "PowerShell(.venv\\\\Scripts\\\\pyinstaller.exe --noconfirm myplane.spec 2>&1)"
+      "PowerShell(.venv\\\\Scripts\\\\pyinstaller.exe --noconfirm myplane.spec 2>&1)",
+      "Bash(Select-Object -Property FullName, PSIsContainer)",
+      "Bash(Sort-Object FullName)",
+      "Bash(Format-Table -AutoSize)",
+      "Bash(Select-Object -ExpandProperty FullName)",
+      "Bash(Get-ChildItem -Path \"C:\\\\Users\\\\Chirag\\\\Documents\\\\openfoam_gui\\\\gui\" -Filter \"*.py\")",
+      "Bash(Select-Object Name)",
+      "Bash(python -c \"import pyvistaqt; print\\(pyvistaqt.__version__\\); import inspect; from pyvistaqt import BackgroundPlotter, QtInteractor; print\\(dir\\(BackgroundPlotter\\)\\)\")",
+      "Bash(python -c \"import pyvistaqt; print\\(pyvistaqt.__version__\\)\")",
+      "Bash(pip show *)",
+      "Bash(where python *)",
+      "Bash(\"C:/Users/Chirag/AppData/Local/Programs/Python/Python311/python.exe\" -c \"import pyvistaqt; print\\(pyvistaqt.__version__\\)\")",
+      "Bash(\"C:/Users/Chirag/AppData/Local/Programs/Python/Python311/Scripts/pip.exe\" show *)",
+      "Bash(\"C:/Users/Chirag/AppData/Local/Programs/Python/Python311/Scripts/pip.exe\" list *)",
+      "Bash(findstr -i \"pyqt pyvista vtk\")",
+      "Bash(\"C:/Users/Chirag/AppData/Local/Programs/Python/Python313/Scripts/pip.exe\" list *)",
+      "Bash(grep -v \"^$\")",
+      "Bash(\"C:/Users/Chirag/Documents/openfoam_gui/dist/myplane/_internal/pyvistaqt-0.11.4.dist-info/RECORD\")",
+      "Bash(python *)",
+      "Bash(C:/Users/Chirag/Documents/openfoam_gui/.venv/Scripts/python.exe *)",
+      "Bash(Get-ChildItem -Path \"C:\\\\Users\\\\Chirag\\\\Documents\\\\openfoam_gui\" -Recurse -Directory)",
+      "Bash(Select-Object FullName)"
     ]
   }
 }

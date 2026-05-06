@@ -12,9 +12,10 @@ log = logging.getLogger(__name__)
 class ConditionsPanel(QWidget):
     """Tab 2 — airspeed, angle of attack, altitude with live ISA readouts."""
 
-    def __init__(self, main_window):
+    def __init__(self, main_window, viewport=None):
         super().__init__()
         self._mw = main_window
+        self._viewport_ref = viewport
         self._setup_ui()
 
     def _setup_ui(self):
@@ -27,27 +28,27 @@ class ConditionsPanel(QWidget):
         in_form = QFormLayout()
 
         self._speed = QDoubleSpinBox()
-        self._speed.setRange(1.0, 100.0)
+        self._speed.setRange(1.0, 1000.0)  # Up to Mach 3
         self._speed.setValue(20.0)
         self._speed.setSuffix(" m/s")
         self._speed.valueChanged.connect(self._update)
 
         self._aoa = QDoubleSpinBox()
-        self._aoa.setRange(-20.0, 30.0)
+        self._aoa.setRange(-90.0, 90.0)   # Full range AoA
         self._aoa.setValue(3.0)
         self._aoa.setSuffix(" °")
         self._aoa.setSingleStep(0.5)
         self._aoa.valueChanged.connect(self._update)
 
         self._alt = QDoubleSpinBox()
-        self._alt.setRange(0.0, 4000.0)
+        self._alt.setRange(0.0, 30000.0)  # Up to Stratosphere
         self._alt.setValue(100.0)
         self._alt.setSuffix(" m")
         self._alt.setSingleStep(50.0)
         self._alt.valueChanged.connect(self._update)
 
         self._lref = QDoubleSpinBox()
-        self._lref.setRange(0.01, 5.0)
+        self._lref.setRange(0.001, 100.0) # Up to Airliner chord
         self._lref.setValue(0.25)
         self._lref.setSuffix(" m")
         self._lref.setSingleStep(0.01)
@@ -55,7 +56,7 @@ class ConditionsPanel(QWidget):
         self._lref.setToolTip("Mean aerodynamic chord — reference length for CM")
 
         self._aref = QDoubleSpinBox()
-        self._aref.setRange(0.001, 20.0)
+        self._aref.setRange(0.0001, 2000.0) # Up to Airliner area
         self._aref.setValue(0.15)
         self._aref.setSuffix(" m²")
         self._aref.setSingleStep(0.01)
@@ -91,15 +92,26 @@ class ConditionsPanel(QWidget):
         from core.atmosphere import ISAAtmosphere
         isa   = ISAAtmosphere(self._alt.value())
         speed = self._speed.value()
+        mach  = speed / isa.speed_of_sound
         self._lbl_rho.setText(f"{isa.density:.4f} kg/m³")
         self._lbl_nu.setText(f"{isa.kinematic_viscosity:.2e} m²/s")
-        self._lbl_mach.setText(f"{speed / isa.speed_of_sound:.4f}")
+        
+        mach_str = f"{mach:.4f}"
+        if mach > 0.3:
+            self._lbl_mach.setStyleSheet("color: #ffaa00; font-weight: bold;")
+            mach_str += " (Incompressible limit)"
+        else:
+            self._lbl_mach.setStyleSheet("")
+        self._lbl_mach.setText(mach_str)
+        
         self._lbl_re.setText(f"{speed / isa.kinematic_viscosity:,.0f} m⁻¹")
 
         # Live-update the wind arrow whenever geometry is already loaded
-        vp = getattr(self._mw, "viewport", None)
+        vp = self._viewport_ref or getattr(self._mw, "viewport", None)
         if vp and vp.has_geometry():
             vp.show_wind_arrow(speed, self._aoa.value())
+            if hasattr(vp, "update_ground_plane"):
+                vp.update_ground_plane(self._alt.value())
 
     def get_conditions(self) -> dict:
         from core.atmosphere import ISAAtmosphere
@@ -120,3 +132,14 @@ class ConditionsPanel(QWidget):
             "lRef": self._lref.value(),
             "Aref": self._aref.value(),
         }
+
+    def set_conditions(self, d: dict) -> None:
+        for widget, key in [
+            (self._speed, "airspeed"), (self._aoa, "aoa_deg"),
+            (self._alt, "altitude"), (self._lref, "lRef"), (self._aref, "Aref"),
+        ]:
+            if key in d:
+                widget.blockSignals(True)
+                widget.setValue(d[key])
+                widget.blockSignals(False)
+        self._update()

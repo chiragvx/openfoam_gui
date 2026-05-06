@@ -70,7 +70,10 @@ class CaseGenerator:
 
         # Build template context
         geom = GeometryProcessor()
-        domain = geom.compute_domain(self._stl_path)
+        domain = geom.compute_domain(
+            self._stl_path, 
+            altitude=self._conditions.get("altitude", 100.0)
+        )
         ctx = self._build_context(domain)
 
         # Render every template

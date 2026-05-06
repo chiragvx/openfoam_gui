@@ -108,6 +108,11 @@ class MeshPanel(QWidget):
             self._mw.set_status("Mesh done — proceed to Solver tab")
             self._mw.solver_panel.set_case_dir(case_dir)
             log.info("Mesh generation complete")
+            
+            # Auto-save study if available
+            main_win = self.window()
+            if hasattr(main_win, "_save_study"):
+                main_win._save_study()
         else:
             self._status.setText(f"FAILED: {msg}")
             self._mw.set_status("Mesh FAILED — check log")
@@ -120,3 +125,11 @@ class MeshPanel(QWidget):
             "surface_layers": self._layers.value(),
             "n_cores":        self._mw.solver_panel.get_n_cores(),
         }
+
+    def set_settings(self, d: dict) -> None:
+        for widget, key in [
+            (self._ref_min, "refinement_min"), (self._ref_max, "refinement_max"),
+            (self._layers, "surface_layers"),
+        ]:
+            if key in d:
+                widget.setValue(d[key])

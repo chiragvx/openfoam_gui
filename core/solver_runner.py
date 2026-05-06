@@ -12,12 +12,17 @@ set -e
 echo "=== foamRun (incompressibleFluid) ==="
 foamRun -solver incompressibleFluid > log.foamRun 2>&1
 echo "foamRun OK"
+
+echo "=== Post-Processing ==="
+foamPostProcess -func wallShearStress -latestTime > log.wallShearStress 2>&1 || echo "wallShearStress failed"
+foamPostProcess -func yPlus -latestTime > log.yPlus 2>&1 || echo "yPlus failed"
+echo "Post-processing OK"
 """
 
     _SCRIPT_PARALLEL = """\
 set -e
 echo "=== decomposePar ==="
-decomposePar > log.decomposePar.solver 2>&1
+decomposePar -force > log.decomposePar.solver 2>&1
 echo "decomposePar OK"
 
 echo "=== foamRun ({n} cores, parallel) ==="
@@ -25,8 +30,13 @@ mpirun --allow-run-as-root -np {n} foamRun -solver incompressibleFluid -parallel
 echo "foamRun OK"
 
 echo "=== reconstructPar ==="
-reconstructPar > log.reconstructPar 2>&1
+reconstructPar -latestTime > log.reconstructPar 2>&1
 echo "reconstructPar OK"
+
+echo "=== Post-Processing ==="
+foamPostProcess -func wallShearStress -latestTime > log.wallShearStress 2>&1 || echo "wallShearStress failed"
+foamPostProcess -func yPlus -latestTime > log.yPlus 2>&1 || echo "yPlus failed"
+echo "Post-processing OK"
 
 echo "=== removing processor directories ==="
 rm -rf processor*

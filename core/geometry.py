@@ -35,9 +35,26 @@ class GeometryProcessor:
                 log.warning("Mesh still not watertight after repair; snappyHexMesh may struggle")
 
         dest = geom_dir / (src.stem + ".stl")
-        mesh.export(str(dest), file_type="stl_ascii")
-        log.info(f"Geometry prepared: {dest}  ({len(mesh.faces)} triangles)")
+        # Export as binary STL for performance and robustness
+        mesh.export(str(dest), file_type="stl")
+        log.info(f"Geometry prepared: {dest}  ({len(mesh.faces)} triangles, binary)")
         return str(dest)
+    def rotate(self, stl_path: str, axis: str, degrees: float):
+        """Rotates the STL mesh around a given axis and overwrites the file."""
+        import numpy as np
+        mesh = trimesh.load(stl_path, force="mesh")
+        angle = np.radians(degrees)
+        
+        # Identity matrix for axis vector
+        axis_vec = [0.0, 0.0, 0.0]
+        if axis == "X": axis_vec[0] = 1.0
+        elif axis == "Y": axis_vec[1] = 1.0
+        else: axis_vec[2] = 1.0
+        
+        rot = trimesh.transformations.rotation_matrix(angle, axis_vec)
+        mesh.apply_transform(rot)
+        mesh.export(stl_path, file_type="stl")
+        log.info(f"Rotated {axis} by {degrees} deg: {stl_path}")
 
     def get_info(self, stl_path: str) -> dict:
         mesh = trimesh.load(stl_path, force="mesh")
@@ -49,7 +66,7 @@ class GeometryProcessor:
             "zmin": float(b[0][2]), "zmax": float(b[1][2]),
         }
 
-    def compute_domain(self, stl_path: str) -> dict:
+    def compute_domain(self, stl_path: str, altitude: float = 100.0) -> dict:
         """
         Wind-tunnel bounding box for blockMesh.
         Flow travels in the +X direction; AoA rotates the velocity vector.
@@ -61,11 +78,15 @@ class GeometryProcessor:
             info["zmax"] - info["zmin"],
         )
         import config as cfg
+        
+        # Ground effect: If altitude is 0, floor is exactly at the bottom of the model
+        zmin = info["zmin"] if altitude <= 0.01 else info["zmin"] - cfg.DOMAIN_VERTICAL_FACTOR * span
+        
         return {
             "xmin": info["xmin"] - cfg.DOMAIN_UPSTREAM_FACTOR   * span,
             "xmax": info["xmax"] + cfg.DOMAIN_DOWNSTREAM_FACTOR * span,
             "ymin": info["ymin"] - cfg.DOMAIN_LATERAL_FACTOR    * span,
             "ymax": info["ymax"] + cfg.DOMAIN_LATERAL_FACTOR    * span,
-            "zmin": info["zmin"] - cfg.DOMAIN_VERTICAL_FACTOR   * span,
+            "zmin": zmin,
             "zmax": info["zmax"] + cfg.DOMAIN_VERTICAL_FACTOR   * span,
         }

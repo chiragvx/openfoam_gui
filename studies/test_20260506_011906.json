@@ -1,0 +1,41 @@
+{
+  "name": "test",
+  "study_id": "test_20260506_011906",
+  "created": "2026-05-06T01:19:06",
+  "modified": "2026-05-06T10:52:51",
+  "description": "11r",
+  "geometry_path": "C:\\Users\\Chirag\\Documents\\openfoam_gui\\cases\\geometry\\1a v9.stl",
+  "case_dir": "C:\\Users\\Chirag\\Documents\\openfoam_gui\\cases\\run_20260506_012044",
+  "conditions": {
+    "airspeed": 100.0,
+    "aoa_deg": 0.0,
+    "altitude": 1000.0,
+    "rho": 1.1116522819524908,
+    "nu": 1.581217727342673e-05,
+    "mu": 1.7577642948642136e-05,
+    "speed_of_sound": 336.43228962155223,
+    "Ux": 100.0,
+    "Uy": 0.0,
+    "Uz": 0.0,
+    "lRef": 0.25,
+    "Aref": 0.15
+  },
+  "mesh_settings": {
+    "refinement_min": 4,
+    "refinement_max": 6,
+    "surface_layers": 4,
+    "n_cores": 20
+  },
+  "solver_settings": {
+    "end_time": 200,
+    "n_cores": 20
+  },
+  "results": {
+    "time": 150.0,
+    "CmPitch": -0.001223408,
+    "Cd": 0.02263592,
+    "Cl": 0.009973795,
+    "solved": true
+  },
+  "ui_state": {}
+}
