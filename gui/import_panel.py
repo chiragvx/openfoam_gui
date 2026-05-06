@@ -8,6 +8,9 @@ from PyQt6.QtWidgets import (
 
 log = logging.getLogger(__name__)
 
+from core.settings_manager import SettingsManager
+from core.unit_converter   import UnitConverter
+
 
 class ImportPanel(QWidget):
     """Tab 1 — import STL/OBJ, preview geometry, show mesh info."""
@@ -69,6 +72,25 @@ class ImportPanel(QWidget):
         layout.addWidget(self._orient_grp)
 
         layout.addStretch()
+        self.refresh_units()
+
+    def refresh_units(self):
+        if not self._path:
+            return
+        # Refresh the bounds label
+        try:
+            from core.geometry import GeometryProcessor
+            proc = GeometryProcessor()
+            info = proc.get_info(self._path)
+            u = SettingsManager.get("units")
+            self._lbl_bounds.setText(
+                f"X {UnitConverter.format_length(info['xmin'], u)} – {UnitConverter.format_length(info['xmax'], u)} | "
+                f"Y {UnitConverter.format_length(info['ymin'], u)} – {UnitConverter.format_length(info['ymax'], u)} | "
+                f"Z {UnitConverter.format_length(info['zmin'], u)} – {UnitConverter.format_length(info['zmax'], u)}"
+            )
+        except Exception:
+            pass
+
 
     def _rotate(self, axis: str, degrees: float):
         if not self._path:
@@ -81,10 +103,11 @@ class ImportPanel(QWidget):
             
             # Refresh info and viewport
             info = proc.get_info(self._path)
+            u = SettingsManager.get("units")
             self._lbl_bounds.setText(
-                f"X {info['xmin']:.3f}–{info['xmax']:.3f} m | "
-                f"Y {info['ymin']:.3f}–{info['ymax']:.3f} m | "
-                f"Z {info['zmin']:.3f}–{info['zmax']:.3f} m"
+                f"X {UnitConverter.format_length(info['xmin'], u)} – {UnitConverter.format_length(info['xmax'], u)} | "
+                f"Y {UnitConverter.format_length(info['ymin'], u)} – {UnitConverter.format_length(info['ymax'], u)} | "
+                f"Z {UnitConverter.format_length(info['zmin'], u)} – {UnitConverter.format_length(info['zmax'], u)}"
             )
             self._mw.viewport.show_geometry(self._path)
             self._mw.set_status("Rotation applied")
@@ -114,10 +137,11 @@ class ImportPanel(QWidget):
 
             self._path = stl
             self._lbl_name.setText(Path(path).name)
+            u = SettingsManager.get("units")
             self._lbl_bounds.setText(
-                f"X {info['xmin']:.3f}–{info['xmax']:.3f} m | "
-                f"Y {info['ymin']:.3f}–{info['ymax']:.3f} m | "
-                f"Z {info['zmin']:.3f}–{info['zmax']:.3f} m"
+                f"X {UnitConverter.format_length(info['xmin'], u)} – {UnitConverter.format_length(info['xmax'], u)} | "
+                f"Y {UnitConverter.format_length(info['ymin'], u)} – {UnitConverter.format_length(info['ymax'], u)} | "
+                f"Z {UnitConverter.format_length(info['zmin'], u)} – {UnitConverter.format_length(info['zmax'], u)}"
             )
             self._lbl_tris.setText(f"{info['triangles']:,}")
             self._info_box.setVisible(True)

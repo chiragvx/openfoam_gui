@@ -19,8 +19,8 @@ _FIELDS = [
     ("Vortex Energy (Omega)",        "omega"),
 ]
 
-_AXIS_STYLE_ON  = "font-weight:bold; background:#4a90d9; color:white; border-radius:4px;"
-_AXIS_STYLE_OFF = "font-weight:normal; background:#e0e0e0; color:#333; border-radius:4px;"
+# Axis styles moved to refresh_theme for theme awareness
+
 
 
 class _StreamlineWorker(QThread):
@@ -129,6 +129,8 @@ class ResultsPanel(QWidget):
         self._stream_timer.setSingleShot(True)
         self._stream_timer.timeout.connect(self._on_show_streamlines)
         self._setup_ui()
+        self.refresh_theme()
+
 
     # ------------------------------------------------------------------
     def _setup_ui(self):
@@ -243,15 +245,27 @@ class ResultsPanel(QWidget):
         layout.addStretch()
 
         # Initial axis highlight
-        self._set_axis("Y")
+        self.refresh_theme()
 
-    # ------------------------------------------------------------------
+    def refresh_theme(self):
+        from core.settings_manager import SettingsManager
+        theme = SettingsManager.get("theme")
+        
+        on_style = "font-weight:bold; background:#007acc; color:white; border-radius:4px;"
+        if theme == "dark":
+            off_style = "font-weight:normal; background:#333; color:#aaa; border-radius:4px;"
+        else:
+            off_style = "font-weight:normal; background:#e1e1e1; color:#666; border-radius:4px;"
+            
+        self._btn_y.setStyleSheet(on_style if self._stream_axis == "Y" else off_style)
+        self._btn_z.setStyleSheet(on_style if self._stream_axis == "Z" else off_style)
+
     def _set_axis(self, axis: str):
         self._stream_axis = axis
-        self._btn_y.setStyleSheet(_AXIS_STYLE_ON  if axis == "Y" else _AXIS_STYLE_OFF)
-        self._btn_z.setStyleSheet(_AXIS_STYLE_ON  if axis == "Z" else _AXIS_STYLE_OFF)
+        self.refresh_theme()
         label = "Y offset (m):" if axis == "Y" else "Z offset (m):"
         self._offset_label.setText(label)
+
 
     def _on_offset_spin_changed(self, value: float):
         self._stream_offset = value

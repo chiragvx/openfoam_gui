@@ -18,6 +18,9 @@ from gui.solver_panel     import SolverPanel
 from gui.results_panel    import ResultsPanel
 from gui.log_widget       import LogWidget
 from gui.viewport_widget  import ViewportWidget
+from gui.theme_manager    import ThemeManager
+from core.settings_manager import SettingsManager
+from gui.settings_dialog  import SettingsDialog
 
 log = logging.getLogger(__name__)
 
@@ -38,12 +41,13 @@ class MainWindow(QMainWindow):
 
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("OpenFOAM RC CFD")
+        self.setWindowTitle("Rekon labs CFD")
         self.resize(1400, 900)
         self._current_study: Study | None = None
+        self._apply_initial_theme()
         self._build_ui()
         self._validate_wsl()
-        log.info("OpenFOAM RC CFD GUI ready")
+        log.info("Rekon labs CFD ready")
         QTimer.singleShot(200, self._show_startup_dialog)
 
     # ------------------------------------------------------------------
@@ -134,11 +138,16 @@ class MainWindow(QMainWindow):
         save_act.setShortcut(QKeySequence.StandardKey.Save)
         save_act.triggered.connect(self._save_study)
         file_menu.addAction(save_act)
-
         file_menu.addSeparator()
         exit_act = QAction("E&xit", self)
         exit_act.triggered.connect(self.close)
         file_menu.addAction(exit_act)
+
+        options_menu = menubar.addMenu("&Options")
+        settings_act = QAction("&Settings…", self)
+        settings_act.triggered.connect(self._open_settings)
+        options_menu.addAction(settings_act)
+
 
     def _show_startup_dialog(self):
         from gui.study_dialog import StudyStartupDialog
@@ -155,7 +164,7 @@ class MainWindow(QMainWindow):
         if dlg.exec() == QDialog.DialogCode.Accepted:
             self._current_study = Study(name=dlg.name, description=dlg.description)
             StudyManager.save(self._current_study)
-            self.setWindowTitle(f"OpenFOAM RC CFD — {self._current_study.name}")
+            self.setWindowTitle(f"Rekon labs CFD — {self._current_study.name}")
             self.set_status(f"New study created: {self._current_study.name}")
 
     def _load_study(self):
@@ -167,7 +176,7 @@ class MainWindow(QMainWindow):
 
     def _apply_study(self, study: Study):
         self._current_study = study
-        self.setWindowTitle(f"OpenFOAM RC CFD — {study.name}")
+        self.setWindowTitle(f"Rekon labs CFD — {study.name}")
         
         # Restore panel states
         if study.conditions:
@@ -210,3 +219,32 @@ class MainWindow(QMainWindow):
             
         StudyManager.save(s)
         self.set_status(f"Study saved: {s.name}")
+
+    def _apply_initial_theme(self):
+        theme = SettingsManager.get("theme")
+        ThemeManager.apply_theme(theme)
+
+    def _open_settings(self):
+        dlg = SettingsDialog(self)
+        if dlg.exec() == QDialog.DialogCode.Accepted:
+            self.set_status("Settings updated")
+            # Refresh panels that display units
+            if hasattr(self, "conditions_panel"):
+                self.conditions_panel.refresh_units()
+                self.conditions_panel.refresh_theme()
+
+            if hasattr(self, "import_panel"):
+                self.import_panel.refresh_units()
+            if hasattr(self, "viewport"):
+                self.viewport.refresh_theme()
+                self.viewport.refresh_units()
+            if hasattr(self, "log_widget"):
+                self.log_widget.refresh_theme()
+            if hasattr(self, "results_panel"):
+                self.results_panel.refresh_theme()
+
+
+
+
+
+

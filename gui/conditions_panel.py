@@ -7,6 +7,8 @@ from PyQt6.QtWidgets import (
 )
 
 log = logging.getLogger(__name__)
+from core.settings_manager import SettingsManager
+from core.unit_converter   import UnitConverter
 
 
 class ConditionsPanel(QWidget):
@@ -22,6 +24,7 @@ class ConditionsPanel(QWidget):
         layout = QVBoxLayout(self)
         layout.addWidget(QLabel("<b>Flight Conditions</b>"))
         layout.addWidget(QLabel("Conditions represent the freestream flow around the aircraft."))
+
 
         # --- Inputs ---
         in_grp  = QGroupBox("Inputs")
@@ -85,12 +88,33 @@ class ConditionsPanel(QWidget):
         der_grp.setLayout(der_form)
         layout.addWidget(der_grp)
         layout.addStretch()
+        self.refresh_units()
+        self.refresh_theme()
 
+
+    def refresh_units(self):
+        u = SettingsManager.get("units")
+        
+        # Update spinbox suffixes
+        # Speed is always m/s for now, or should we add knots/mph? 
+        # User didn't ask for speed units yet, but let's stick to length for now.
+        
+        self._alt.setSuffix(f" {u}")
+        self._lref.setSuffix(f" {u}")
+        self._aref.setSuffix(f" {u}²")
+        
+        # Update ranges if needed? No, let's keep them large.
         self._update()
+
+    def refresh_theme(self):
+        self._update()
+
 
     def _update(self):
         from core.atmosphere import ISAAtmosphere
-        isa   = ISAAtmosphere(self._alt.value())
+        u = SettingsManager.get("units")
+        alt_m = UnitConverter.to_base(self._alt.value(), u)
+        isa   = ISAAtmosphere(alt_m)
         speed = self._speed.value()
         mach  = speed / isa.speed_of_sound
         self._lbl_rho.setText(f"{isa.density:.4f} kg/m³")
@@ -98,11 +122,14 @@ class ConditionsPanel(QWidget):
         
         mach_str = f"{mach:.4f}"
         if mach > 0.3:
-            self._lbl_mach.setStyleSheet("color: #ffaa00; font-weight: bold;")
+            theme = SettingsManager.get("theme")
+            color = "#ffaa00" if theme == "dark" else "#d48806"
+            self._lbl_mach.setStyleSheet(f"color: {color}; font-weight: bold;")
             mach_str += " (Incompressible limit)"
         else:
             self._lbl_mach.setStyleSheet("")
         self._lbl_mach.setText(mach_str)
+
         
         self._lbl_re.setText(f"{speed / isa.kinematic_viscosity:,.0f} m⁻¹")
 
@@ -111,17 +138,22 @@ class ConditionsPanel(QWidget):
         if vp and vp.has_geometry():
             vp.show_wind_arrow(speed, self._aoa.value())
             if hasattr(vp, "update_ground_plane"):
-                vp.update_ground_plane(self._alt.value())
+                vp.update_ground_plane(alt_m)
 
     def get_conditions(self) -> dict:
         from core.atmosphere import ISAAtmosphere
-        isa   = ISAAtmosphere(self._alt.value())
+        u = SettingsManager.get("units")
+        alt_m = UnitConverter.to_base(self._alt.value(), u)
+        lref_m = UnitConverter.to_base(self._lref.value(), u)
+        aref_m2 = UnitConverter.area_to_base(self._aref.value(), u)
+        
+        isa   = ISAAtmosphere(alt_m)
         speed = self._speed.value()
         aoa   = self._aoa.value()
         return {
             "airspeed":       speed,
             "aoa_deg":        aoa,
-            "altitude":       self._alt.value(),
+            "altitude":       alt_m,
             "rho":            isa.density,
             "nu":             isa.kinematic_viscosity,
             "mu":             isa.dynamic_viscosity,
@@ -129,8 +161,8 @@ class ConditionsPanel(QWidget):
             "Ux": speed * math.cos(math.radians(aoa)),
             "Uy": 0.0,
             "Uz": speed * math.sin(math.radians(aoa)),
-            "lRef": self._lref.value(),
-            "Aref": self._aref.value(),
+            "lRef": lref_m,
+            "Aref": aref_m2,
         }
 
     def set_conditions(self, d: dict) -> None:

@@ -1,7 +1,7 @@
 # Plan: 3D Viewer Usability + Study Management
 
 ## Context
-The OpenFOAM RC Aircraft CFD GUI needs three areas improved:
+The Rekon labs CFD needs three areas improved:
 1. **3D viewer view presets** — only Front/Side/Top exist; Back/Bottom/Left/Right missing
 2. **Camera interaction** — right-click should pan; Ctrl should lock rotation to axis
 3. **Reflective ground plane** — when altitude ≈ 0 m show a ground plane
@@ -390,7 +390,7 @@ def _new_study(self):
     if dlg.exec() == QDialog.DialogCode.Accepted:
         self._current_study = Study(name=dlg.name, description=dlg.description)
         StudyManager.save(self._current_study)
-        self.setWindowTitle(f"OpenFOAM RC CFD — {self._current_study.name}")
+        self.setWindowTitle(f"Rekon labs CFD — {self._current_study.name}")
 
 def _load_study(self):
     from gui.study_dialog import LoadStudyDialog
@@ -400,7 +400,7 @@ def _load_study(self):
 
 def _apply_study(self, study: Study):
     self._current_study = study
-    self.setWindowTitle(f"OpenFOAM RC CFD — {study.name}")
+    self.setWindowTitle(f"Rekon labs CFD — {study.name}")
     if study.geometry_path and Path(study.geometry_path).exists():
         self.import_panel.load_geometry(study.geometry_path)
     if study.conditions:

@@ -15,7 +15,7 @@ def configure_logging():
         datefmt="%H:%M:%S",
     )
 
-    log_file = config.LOGS_DIR / "openfoam_gui.log"
+    log_file = config.LOGS_DIR / "rekon_labs_cfd.log"
     fh = logging.handlers.RotatingFileHandler(
         log_file,
         maxBytes=config.LOG_FILE_MAX_BYTES,

@@ -16,14 +16,14 @@ def main():
 
     configure_logging()
     log = logging.getLogger(__name__)
-    log.info("=== OpenFOAM RC CFD GUI starting ===")
+    log.info("=== Rekon labs CFD starting ===")
 
     QApplication.setHighDpiScaleFactorRoundingPolicy(
         Qt.HighDpiScaleFactorRoundingPolicy.PassThrough
     )
     app = QApplication(sys.argv)
-    app.setApplicationName("OpenFOAM RC CFD")
-    app.setOrganizationName("RCDesign")
+    app.setApplicationName("Rekon labs CFD")
+    app.setOrganizationName("Rekon labs")
 
     window = MainWindow()
     window.show()

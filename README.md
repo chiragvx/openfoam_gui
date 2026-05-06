@@ -1,4 +1,4 @@
-# OpenFOAM RC Aircraft CFD GUI
+# Rekon labs CFD
 
 A Windows 11 desktop app for running steady RANS CFD on RC aircraft geometry. Import an STL or OBJ from Fusion 360, set flight conditions, run the full OpenFOAM meshing and solving pipeline through WSL2, and view pressure/velocity results in an embedded 3D viewport — no external tools required.
 
@@ -77,11 +77,11 @@ python -c "from core.atmosphere import ISAAtmosphere; a=ISAAtmosphere(0); print(
 
 ## Logs
 
-- **File:** `logs/openfoam_gui.log` — rotating, 5 MB × 3 files
+- **File:** `logs/rekon_labs_cfd.log` — rotating, 5 MB × 3 files
 - **GUI:** colour-coded panel at the bottom of the window (DEBUG = grey, INFO = white, WARNING = yellow, ERROR = red)
 
 All OpenFOAM output (blockMesh, snappyHexMesh, simpleFoam) is piped line-by-line and tagged `[MESH]` or `[SOLVER]` in both destinations.
 
 ## Pre-built binaries
 
-Windows executables are attached to each [GitHub release](../../releases). Download `OpenFOAM-GUI.exe` and run it directly — no Python installation needed. WSL2 and OpenFOAM must still be installed separately (steps 1–2 above).
+Windows executables are attached to each [GitHub release](../../releases). Download `Rekon-Labs-CFD.exe` and run it directly — no Python installation needed. WSL2 and OpenFOAM must still be installed separately (steps 1–2 above).

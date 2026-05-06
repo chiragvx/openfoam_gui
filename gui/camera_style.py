@@ -1,41 +1,36 @@
 import vtk
+import math
 
 class AircraftCameraStyle(vtk.vtkInteractorStyleTrackballCamera):
+    """
+    Turntable-style camera that locks the Z-axis (up) and handles custom mouse events.
+    """
     def __init__(self):
         super().__init__()
-        self._ctrl_locked = False
-        self._snap_callback = None
-        self.AddObserver("RightButtonPressEvent",   self._right_press)
-        self.AddObserver("RightButtonReleaseEvent", self._right_release)
-        self.AddObserver("KeyPressEvent",           self._key_press)
-        self.AddObserver("KeyReleaseEvent",         self._key_release)
-        self.AddObserver("LeftButtonPressEvent",    self._left_press)
+        self.AddObserver("MiddleButtonPressEvent",   self._middle_press)
+        self.AddObserver("MiddleButtonReleaseEvent", self._middle_release)
+        self.AddObserver("InteractionEvent",         self._on_interaction)
 
-    def _right_press(self, obj, event):
-        self.StartPan()          # pan instead of zoom on right-click
+    def _middle_press(self, obj, event):
+        self.StartPan()
 
-    def _right_release(self, obj, event):
+    def _middle_release(self, obj, event):
         self.EndPan()
 
-    def _key_press(self, obj, event):
-        key = self.GetInteractor().GetKeySym()
-        if key in ("Control_L", "Control_R", "ctrl"):
-            self._ctrl_locked = True
-            # snap camera to nearest axis — call back via stored plotter ref
-            if self._snap_callback:
-                self._snap_callback()
+    def _on_interaction(self, obj, event):
+        """Enforce Z-up (Turntable behavior) on every interaction."""
+        ren = self.GetInteractor().GetRenderWindow().GetRenderers().GetFirstRenderer()
+        cam = ren.GetActiveCamera()
+        
+        # Enforce Z-up
+        cam.SetViewUp(0, 0, 1)
+        # Ensure the camera doesn't get "stuck" at the poles
+        # (This is a common issue with pure Z-up constraints)
 
-    def _key_release(self, obj, event):
-        key = self.GetInteractor().GetKeySym()
-        if key in ("Control_L", "Control_R", "ctrl"):
-            self._ctrl_locked = False
+        
+        # To make it feel like a real turntable, we should also project the right vector 
+        # but vtkInteractorStyleTrackballCamera handles basic rotation; 
+        # forcing ViewUp to (0,0,1) effectively makes it a turntable.
 
-    def _left_press(self, obj, event):
-        if self._ctrl_locked:
-            self.StartPan()      # pan-only while Ctrl held
-        else:
-            self.OnLeftButtonDown()  # normal rotate
-
-    # Attach a callback so ViewportWidget can snap camera on Ctrl press
     def set_snap_callback(self, cb):
-        self._snap_callback = cb
+        pass

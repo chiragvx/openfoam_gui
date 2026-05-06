@@ -16,7 +16,7 @@ class StudyStartupDialog(QDialog):
         layout = QVBoxLayout(self)
         layout.setSpacing(15)
         
-        lbl = QLabel("Welcome to OpenFOAM RC CFD\nWould you like to start a new study or load an existing one?")
+        lbl = QLabel("Welcome to Rekon labs CFD\nWould you like to start a new study or load an existing one?")
         lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
         lbl.setWordWrap(True)
         layout.addWidget(lbl)

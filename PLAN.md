@@ -1,4 +1,4 @@
-# OpenFOAM RC Aircraft CFD GUI — Project Plan
+# Rekon labs CFD — Project Plan
 
 ## Purpose
 
