@@ -16,6 +16,8 @@ from gui.conditions_panel import ConditionsPanel
 from gui.mesh_panel       import MeshPanel
 from gui.solver_panel     import SolverPanel
 from gui.results_panel    import ResultsPanel
+from gui.bulk_testing_panel import BulkTestingPanel
+
 from gui.log_widget       import LogWidget
 from gui.viewport_widget  import ViewportWidget
 from gui.theme_manager    import ThemeManager
@@ -76,12 +78,16 @@ class MainWindow(QMainWindow):
         self.mesh_panel       = MeshPanel(self)
         self.solver_panel     = SolverPanel(self)
         self.results_panel    = ResultsPanel(self)
+        self.bulk_panel       = BulkTestingPanel(self)
+
 
         self.tabs.addTab(self.import_panel,      "1. Import")
         self.tabs.addTab(self.conditions_panel,  "2. Conditions")
         self.tabs.addTab(self.mesh_panel,        "3. Mesh")
         self.tabs.addTab(self.solver_panel,      "4. Solver")
         self.tabs.addTab(self.results_panel,     "5. Results")
+        self.tabs.addTab(self.bulk_panel,        "6. Bulk Testing")
+
         
         central.addWidget(self.tabs)
         central.addWidget(vertical_splitter)
@@ -134,11 +140,22 @@ class MainWindow(QMainWindow):
         load_act.triggered.connect(self._load_study)
         file_menu.addAction(load_act)
 
+        import_act = QAction("&Import Study… (.zip)", self)
+        import_act.triggered.connect(self._import_study)
+        file_menu.addAction(import_act)
+
+
         save_act = QAction("&Save Study", self)
         save_act.setShortcut(QKeySequence.StandardKey.Save)
         save_act.triggered.connect(self._save_study)
         file_menu.addAction(save_act)
+
+        export_act = QAction("&Export Study… (.zip)", self)
+        export_act.triggered.connect(self._export_study)
+        file_menu.addAction(export_act)
+
         file_menu.addSeparator()
+
         exit_act = QAction("E&xit", self)
         exit_act.triggered.connect(self.close)
         file_menu.addAction(exit_act)
@@ -195,7 +212,9 @@ class MainWindow(QMainWindow):
             self.solver_panel.set_case_dir(study.case_dir)
             self.results_panel.set_case_dir(study.case_dir)
             
+        self.results_panel.refresh_runs()
         self.set_status(f"Loaded study: {study.name}")
+
 
     def _save_study(self):
         if self._current_study is None:
@@ -219,6 +238,160 @@ class MainWindow(QMainWindow):
             
         StudyManager.save(s)
         self.set_status(f"Study saved: {s.name}")
+
+    def _export_study(self):
+        if self._current_study is None:
+            self.set_status("Error: No active study to export.")
+            return
+
+        from PyQt6.QtWidgets import QFileDialog, QProgressDialog
+        import zipfile
+        import shutil
+
+        s = self._current_study
+        default_name = f"{s.study_id}_export.zip"
+        path, _ = QFileDialog.getSaveFileName(self, "Export Whole Study", default_name, "ZIP Archives (*.zip)")
+        if not path: return
+
+        self.set_status("Exporting study... this may take a while")
+        
+        # Collect files to include
+        files_to_add = []
+        
+        # 1. Study JSON
+        json_path = StudyManager.get_path(s.study_id)
+        if json_path.exists():
+            files_to_add.append((json_path, "study.json"))
+            
+        # 2. Geometry
+        if s.geometry_path and Path(s.geometry_path).exists():
+            geom_path = Path(s.geometry_path)
+            files_to_add.append((geom_path, f"geometry/{geom_path.name}"))
+            
+        # 3. Case directories
+        dirs_to_add = []
+        if s.case_dir and Path(s.case_dir).exists():
+            dirs_to_add.append((Path(s.case_dir), f"results/main_run"))
+            
+        for i, run in enumerate(getattr(s, "runs", [])):
+            rd = run.get("case_dir")
+            if rd and Path(rd).exists():
+                dirs_to_add.append((Path(rd), f"results/run_{i+1}"))
+
+        # Create ZIP
+        try:
+            progress = QProgressDialog("Archiving study files...", "Cancel", 0, len(files_to_add) + len(dirs_to_add), self)
+            progress.setWindowModality(Qt.WindowModality.WindowModal)
+            progress.show()
+            
+            with zipfile.ZipFile(path, 'w', zipfile.ZIP_DEFLATED) as zipf:
+                idx = 0
+                # Add single files
+                for src, arcname in files_to_add:
+                    if progress.wasCanceled(): break
+                    zipf.write(src, arcname)
+                    idx += 1
+                    progress.setValue(idx)
+                    
+                # Add directories
+                for src_dir, arcbase in dirs_to_add:
+                    if progress.wasCanceled(): break
+                    for root, dirs, files in os.walk(src_dir):
+                        if progress.wasCanceled(): break
+                        for file in files:
+                            file_path = Path(root) / file
+                            # Skip large processor directories or huge logs if needed? 
+                            # User said "whole study", so we include everything.
+                            rel_path = file_path.relative_to(src_dir)
+                            zipf.write(file_path, Path(arcbase) / rel_path)
+                    idx += 1
+                    progress.setValue(idx)
+            
+            if not progress.wasCanceled():
+                self.set_status(f"Study exported successfully to {Path(path).name}")
+                log.info(f"Study {s.study_id} exported to {path}")
+            else:
+                self.set_status("Export cancelled.")
+        except Exception as e:
+            self.set_status(f"Export failed: {e}")
+            log.error(f"Export failed: {e}")
+
+    def _import_study(self):
+        from PyQt6.QtWidgets import QFileDialog, QProgressDialog
+        import zipfile
+        import shutil
+        import json
+        import time
+
+        path, _ = QFileDialog.getOpenFileName(self, "Import Study ZIP", "", "ZIP Archives (*.zip)")
+        if not path: return
+
+        temp_dir = config.APP_DIR / "temp_import"
+        if temp_dir.exists(): shutil.rmtree(temp_dir)
+        temp_dir.mkdir(parents=True)
+
+        try:
+            self.set_status("Extracting study...")
+            with zipfile.ZipFile(path, 'r') as zipf:
+                zipf.extractall(temp_dir)
+            
+            json_file = temp_dir / "study.json"
+            if not json_file.exists():
+                self.set_status("Error: Invalid study ZIP (missing study.json)")
+                return
+                
+            with open(json_file, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+            
+            # Update study ID to avoid collision if importing same study twice
+            # Actually, let's keep it but ensure we don't overwrite if name exists
+            ts = int(time.time())
+            data["study_id"] = f"{data.get('study_id', 'imported')}_{ts}"
+            data["name"] = f"{data.get('name', 'Imported')} (Copy)"
+            
+            # --- Remap Geometry ---
+            geom_dir = temp_dir / "geometry"
+            if geom_dir.exists():
+                stl_files = list(geom_dir.glob("*.*"))
+                if stl_files:
+                    dest_geom = config.CASES_DIR / "geometry" / stl_files[0].name
+                    dest_geom.parent.mkdir(parents=True, exist_ok=True)
+                    shutil.copy2(stl_files[0], dest_geom)
+                    data["geometry_path"] = str(dest_geom)
+            
+            # --- Remap Results ---
+            results_dir = temp_dir / "results"
+            if results_dir.exists():
+                # Main run
+                main_run_src = results_dir / "main_run"
+                if main_run_src.exists():
+                    dest_main = config.CASES_DIR / f"run_{ts}_main"
+                    shutil.move(str(main_run_src), str(dest_main))
+                    data["case_dir"] = str(dest_main)
+                    
+                # Batch runs
+                runs = data.get("runs", [])
+                for i, run in enumerate(runs):
+                    run_src = results_dir / f"run_{i+1}"
+                    if run_src.exists():
+                        dest_run = config.CASES_DIR / f"run_{ts}_batch_{i+1}"
+                        shutil.move(str(run_src), str(dest_run))
+                        run["case_dir"] = str(dest_run)
+            
+            # Save new study JSON
+            new_study = Study(**data)
+            StudyManager.save(new_study)
+            
+            self._apply_study(new_study)
+            self.set_status(f"Study imported and loaded: {new_study.name}")
+            
+        except Exception as e:
+            self.set_status(f"Import failed: {e}")
+            log.error(f"Import failed: {e}")
+        finally:
+            if temp_dir.exists(): shutil.rmtree(temp_dir)
+
+
 
     def _apply_initial_theme(self):
         theme = SettingsManager.get("theme")

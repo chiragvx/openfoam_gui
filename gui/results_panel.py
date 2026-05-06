@@ -137,6 +137,16 @@ class ResultsPanel(QWidget):
         layout = QVBoxLayout(self)
         layout.addWidget(QLabel("<b>Results Visualisation</b>"))
 
+        # --- Run Selection (Bulk Testing) ---
+        self._run_grp = QGroupBox("Select Run")
+        run_lay = QVBoxLayout()
+        self._run_combo = QComboBox()
+        self._run_combo.currentIndexChanged.connect(self._on_run_selected)
+        run_lay.addWidget(self._run_combo)
+        self._run_grp.setLayout(run_lay)
+        self._run_grp.setVisible(False)
+        layout.addWidget(self._run_grp)
+
         # --- Field selector ---
         disp_grp  = QGroupBox("Display Options")
         disp_form = QFormLayout()
@@ -146,6 +156,7 @@ class ResultsPanel(QWidget):
         disp_form.addRow("Field:", self._combo)
         disp_grp.setLayout(disp_form)
         layout.addWidget(disp_grp)
+
 
         self._load_btn = QPushButton("Load Results")
         self._load_btn.setEnabled(False)
@@ -187,19 +198,22 @@ class ResultsPanel(QWidget):
 
         # Offset controls — shift the seed line left/right (Y-plane) or up/down (Z-plane)
         offset_row = QHBoxLayout()
-        self._offset_label = QLabel("Y offset (m):")
+        self._offset_label = QLabel("Y offset (%):")
         self._offset_label.setFixedWidth(90)
         self._offset_spin = QDoubleSpinBox()
-        self._offset_spin.setRange(-5.0, 5.0)
-        self._offset_spin.setSingleStep(0.001)
+        self._offset_spin.setRange(-150.0, 150.0)
+        self._offset_spin.setSingleStep(1.0)
         self._offset_spin.setValue(0.0)
-        self._offset_spin.setDecimals(3)
+        self._offset_spin.setSuffix(" %")
+        self._offset_spin.setDecimals(1)
         self._offset_spin.setFixedWidth(100)
-        self._offset_spin.setToolTip("Offset seed line from model centre (metres) — 1mm precision")
+        self._offset_spin.setToolTip("Offset as percentage of model size")
+        
         self._offset_slider = QSlider(Qt.Orientation.Horizontal)
-        self._offset_slider.setRange(-5000, 5000)   # maps to ±5.0 m (0.001 m/step)
+        self._offset_slider.setRange(-150, 150)
         self._offset_slider.setValue(0)
-        self._offset_slider.setToolTip("Drag to offset streamline seed (1mm increments)")
+        self._offset_slider.setToolTip("Drag to offset streamline seed relative to model limits")
+
 
         offset_row.addWidget(self._offset_label)
         offset_row.addWidget(self._offset_spin)
@@ -240,9 +254,22 @@ class ResultsPanel(QWidget):
         aero_grp.setLayout(aero_form)
         layout.addWidget(aero_grp)
 
+        # --- Reporting ---
+        report_grp = QGroupBox("Reports")
+        report_lay = QHBoxLayout()
+        self._btn_report_single = QPushButton("Export Current")
+        self._btn_report_bulk   = QPushButton("Export All Runs")
+        self._btn_report_single.clicked.connect(self._on_export_single)
+        self._btn_report_bulk.clicked.connect(self._on_export_bulk)
+        report_lay.addWidget(self._btn_report_single)
+        report_lay.addWidget(self._btn_report_bulk)
+        report_grp.setLayout(report_lay)
+        layout.addWidget(report_grp)
+
         self._status = QLabel("Waiting for solver…")
         layout.addWidget(self._status)
         layout.addStretch()
+
 
         # Initial axis highlight
         self.refresh_theme()
@@ -264,24 +291,28 @@ class ResultsPanel(QWidget):
         self._stream_axis = axis
         self.refresh_theme()
         label = "Y offset (m):" if axis == "Y" else "Z offset (m):"
-        self._offset_label.setText(label)
-
-
-    def _on_offset_spin_changed(self, value: float):
-        self._stream_offset = value
-        # Update slider without triggering its own signal back
+    def _on_offset_spin_changed(self, val):
         self._offset_slider.blockSignals(True)
-        self._offset_slider.setValue(round(value / 0.001))
+        self._offset_slider.setValue(int(val))
         self._offset_slider.blockSignals(False)
-        self._maybe_auto_update()
+        # We don't trigger update here to avoid too many VTK calls; 
+        # the user clicks 'Show Streamlines' or we use a timer.
+        if self._streamlines_active:
+            self._stream_timer.start(200)
 
-    def _on_offset_slider_changed(self, slider_val: int):
-        value = round(slider_val * 0.001, 3)
-        self._stream_offset = value
+    def _on_offset_slider_changed(self, val):
         self._offset_spin.blockSignals(True)
-        self._offset_spin.setValue(value)
+        self._offset_spin.setValue(float(val))
         self._offset_spin.blockSignals(False)
-        self._maybe_auto_update()
+        if self._streamlines_active:
+            self._stream_timer.start(200)
+
+    def _set_axis(self, axis: str):
+        self._stream_axis = axis
+        self._offset_label.setText(f"{axis} offset (%):")
+        self.refresh_theme()
+        if self._streamlines_active:
+            self._on_show_streamlines()
 
     def _maybe_auto_update(self):
         if self._streamlines_active:
@@ -289,7 +320,47 @@ class ResultsPanel(QWidget):
             self._stream_timer.start(200)
 
     # ------------------------------------------------------------------
+    def refresh_runs(self):
+        """Populate the run selector from current study runs."""
+        if not hasattr(self._mw, "_current_study") or not self._mw._current_study:
+            self._run_grp.setVisible(False)
+            return
+            
+        runs = getattr(self._mw._current_study, "runs", [])
+        if not runs:
+            self._run_grp.setVisible(False)
+            return
+            
+        self._run_combo.blockSignals(True)
+        self._run_combo.clear()
+        for i, run in enumerate(runs):
+            cond = run.get("conditions", {})
+            label = f"Run {i+1}: {cond.get('airspeed', 0)} m/s, AoA={cond.get('aoa_deg', 0)}°"
+            self._run_combo.addItem(label, i)
+        self._run_combo.blockSignals(False)
+        
+        self._run_grp.setVisible(True)
+
+    def _on_run_selected(self, index: int):
+        if index < 0: return
+        runs = getattr(self._mw._current_study, "runs", [])
+        if index >= len(runs): return
+        
+        run_data = runs[index]
+        case_dir = run_data.get("case_dir")
+        if case_dir:
+            self.set_case_dir(case_dir)
+            cond = run_data.get("conditions")
+            if cond:
+                self._load_aero_summary(cond)
+            # Trigger a field reload if a field was already selected
+            if self._load_btn.isEnabled():
+                self._on_load(reset_camera=False)
+
+
+
     def set_case_dir(self, case_dir: str):
+
         self._case_dir = case_dir
         self._load_btn.setEnabled(True)
         self._domain_btn.setEnabled(False)
@@ -299,15 +370,17 @@ class ResultsPanel(QWidget):
         log.info(f"ResultsPanel ready: {case_dir}")
 
     # ------------------------------------------------------------------
-    def _on_load(self):
+    def _on_load(self, reset_camera: bool = True):
         if not self._case_dir:
             return
         field = self._combo.currentData()
-        cond  = self._mw.get_flight_conditions()
+        # Use direct conditions from study if possible, or fallback to panel
+        cond = self._mw.conditions_panel.get_conditions()
         log.info(f"Loading field: {field}")
 
-        self._mw.viewport.show_results(self._case_dir, field)
+        self._mw.viewport.show_results(self._case_dir, field, reset_camera=reset_camera)
         self._mw.viewport.show_wind_arrow(cond["airspeed"], cond["aoa_deg"])
+
 
         self._domain_shown = False
         self._domain_btn.setText("Show Domain Box")
@@ -341,12 +414,26 @@ class ResultsPanel(QWidget):
         self._stream_clear_btn.setEnabled(False)
         self._status.setText(f"Computing {n} streamlines ({self._stream_axis}-plane)…")
 
+        # Calculate absolute offset from percentage
+        bounds = self._mw.viewport._aircraft_bounds
+        if bounds:
+            # Half-extent + some margin
+            if self._stream_axis == "Y":
+                half_extent = (bounds[3] - bounds[2]) * 0.5
+            else:
+                half_extent = (bounds[5] - bounds[4]) * 0.5
+            
+            # 100% means full half-extent
+            abs_offset = (self._offset_spin.value() / 100.0) * half_extent
+        else:
+            abs_offset = 0.0
+
         self._stream_worker = _StreamlineWorker(
             self._case_dir,
             n,
             self._mw.viewport._aircraft_bounds,
             self._stream_axis,
-            self._stream_offset,
+            abs_offset,
         )
         self._stream_worker.ready.connect(self._on_streamlines_ready)
         self._stream_worker.failed.connect(self._on_streamlines_failed)
@@ -401,3 +488,64 @@ class ResultsPanel(QWidget):
             f"Aero summary — CL={Cl:.4f} CD={Cd:.4f} "
             f"L/D={ld:.2f} Lift={lift_N:.2f} N Drag={drag_N:.2f} N"
         )
+    def _on_export_single(self):
+        from PyQt6.QtWidgets import QFileDialog
+        import csv
+        
+        path, _ = QFileDialog.getSaveFileName(self, "Export Single Report", "aero_summary.csv", "CSV Files (*.csv)")
+        if not path: return
+        
+        try:
+            with open(path, "w", newline="", encoding="utf-8") as f:
+                writer = csv.writer(f)
+                writer.writerow(["Parameter", "Value"])
+                writer.writerow(["CL (lift coeff)", self._lbl_cl.text()])
+                writer.writerow(["CD (drag coeff)", self._lbl_cd.text()])
+                writer.writerow(["L/D ratio", self._lbl_ld.text()])
+                writer.writerow(["CM (pitch moment)", self._lbl_cm.text()])
+                writer.writerow(["Lift force", self._lbl_lift.text()])
+                writer.writerow(["Drag force", self._lbl_drag.text()])
+            log.info(f"Report exported to {path}")
+            self._status.setText(f"Exported: {Path(path).name}")
+        except Exception as e:
+            log.error(f"Export failed: {e}")
+
+    def _on_export_bulk(self):
+        from PyQt6.QtWidgets import QFileDialog
+        import csv
+        
+        if not hasattr(self._mw, "_current_study") or not self._mw._current_study:
+            return
+            
+        runs = getattr(self._mw._current_study, "runs", [])
+        if not runs:
+            self._status.setText("No batch results to export.")
+            return
+
+        path, _ = QFileDialog.getSaveFileName(self, "Export Bulk Report", "bulk_results.csv", "CSV Files (*.csv)")
+        if not path: return
+        
+        try:
+            with open(path, "w", newline="", encoding="utf-8") as f:
+                writer = csv.writer(f)
+                writer.writerow(["Run", "Speed (m/s)", "AoA (deg)", "CL", "CD", "L/D", "Cm"])
+                for i, run in enumerate(runs):
+                    cond = run.get("conditions", {})
+                    res  = run.get("results", {})
+                    Cl = res.get("Cl", 0)
+                    Cd = res.get("Cd", 0)
+                    ld = Cl / Cd if abs(Cd) > 1e-9 else 0
+                    
+                    writer.writerow([
+                        i+1,
+                        cond.get("airspeed", 0),
+                        cond.get("aoa_deg", 0),
+                        f"{Cl:.4f}",
+                        f"{Cd:.4f}",
+                        f"{ld:.2f}",
+                        f"{res.get('CmPitch', 0):.4f}"
+                    ])
+            log.info(f"Bulk report exported to {path}")
+            self._status.setText(f"Bulk Exported: {Path(path).name}")
+        except Exception as e:
+            log.error(f"Bulk export failed: {e}")

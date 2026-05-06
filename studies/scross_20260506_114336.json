@@ -2,7 +2,7 @@
   "name": "scross",
   "study_id": "scross_20260506_114336",
   "created": "2026-05-06T11:43:36",
-  "modified": "2026-05-06T12:51:35",
+  "modified": "2026-05-06T20:07:14",
   "description": "",
   "geometry_path": "C:\\Users\\Chirag\\Documents\\openfoam_gui\\cases\\geometry\\Suzuki SCross - Azul.stl",
   "case_dir": "C:\\Users\\Chirag\\Documents\\openfoam_gui\\cases\\run_20260506_124652",
@@ -37,5 +37,79 @@
     "Cl": 1.039866,
     "solved": true
   },
+  "runs": [
+    {
+      "case_dir": "C:\\Users\\Chirag\\Documents\\openfoam_gui\\cases\\run_00_S20_A0",
+      "conditions": {
+        "airspeed": 20.0,
+        "aoa_deg": 0.0,
+        "altitude": 0.0,
+        "rho": 1.2250122659906946,
+        "nu": 1.4606364978623528e-05,
+        "mu": 1.7892976260350732e-05,
+        "speed_of_sound": 340.29228686527705,
+        "Ux": 20.0,
+        "Uy": 0.0,
+        "Uz": 0.0,
+        "lRef": 0.25,
+        "Aref": 0.15
+      },
+      "results": {
+        "time": 150.0,
+        "CmPitch": 2.837155e-08,
+        "Cd": 9.769076e-06,
+        "Cl": 8.901209e-07,
+        "solved": true
+      }
+    },
+    {
+      "case_dir": "C:\\Users\\Chirag\\Documents\\openfoam_gui\\cases\\run_01_S30_A0",
+      "conditions": {
+        "airspeed": 30.0,
+        "aoa_deg": 0.0,
+        "altitude": 0.0,
+        "rho": 1.2250122659906946,
+        "nu": 1.4606364978623528e-05,
+        "mu": 1.7892976260350732e-05,
+        "speed_of_sound": 340.29228686527705,
+        "Ux": 30.0,
+        "Uy": 0.0,
+        "Uz": 0.0,
+        "lRef": 0.25,
+        "Aref": 0.15
+      },
+      "results": {
+        "time": 150.0,
+        "CmPitch": 2.658406e-08,
+        "Cd": 9.486094e-06,
+        "Cl": 4.574825e-07,
+        "solved": true
+      }
+    },
+    {
+      "case_dir": "C:\\Users\\Chirag\\Documents\\openfoam_gui\\cases\\run_02_S40_A0",
+      "conditions": {
+        "airspeed": 40.0,
+        "aoa_deg": 0.0,
+        "altitude": 0.0,
+        "rho": 1.2250122659906946,
+        "nu": 1.4606364978623528e-05,
+        "mu": 1.7892976260350732e-05,
+        "speed_of_sound": 340.29228686527705,
+        "Ux": 40.0,
+        "Uy": 0.0,
+        "Uz": 0.0,
+        "lRef": 0.25,
+        "Aref": 0.15
+      },
+      "results": {
+        "time": 200.0,
+        "CmPitch": 2.484481e-08,
+        "Cd": 9.402244e-06,
+        "Cl": 3.243352e-07,
+        "solved": true
+      }
+    }
+  ],
   "ui_state": {}
 }

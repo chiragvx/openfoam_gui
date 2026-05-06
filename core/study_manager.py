@@ -19,7 +19,9 @@ class Study:
     mesh_settings: dict = field(default_factory=dict)
     solver_settings: dict = field(default_factory=dict)
     results: dict = field(default_factory=dict)
+    runs: list[dict] = field(default_factory=list)
     ui_state: dict = field(default_factory=dict)
+
 
     def __post_init__(self):
         now = datetime.now().isoformat(timespec="seconds")
@@ -50,7 +52,12 @@ class StudyManager:
         return studies
 
     @classmethod
+    def get_path(cls, study_id: str) -> Path:
+        return cls._dir() / f"{study_id}.json"
+
+    @classmethod
     def save(cls, study: Study) -> Path:
+
         study.modified = datetime.now().isoformat(timespec="seconds")
         path = cls._dir() / f"{study.study_id}.json"
         path.write_text(json.dumps(asdict(study), indent=2), encoding="utf-8")

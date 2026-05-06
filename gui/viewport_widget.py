@@ -278,7 +278,8 @@ class ViewportWidget(QWidget):
             log.error(f"Viewport geometry load error: {exc}")
 
     # ------------------------------------------------------------------
-    def show_results(self, case_dir: str, field: str = "p"):
+    def show_results(self, case_dir: str, field: str = "p", reset_camera: bool = True):
+
         if self._plotter is None:
             return
         try:
@@ -332,10 +333,12 @@ class ViewportWidget(QWidget):
             if aircraft_bounds:
                 self._aircraft_bounds = aircraft_bounds
                 self._scene_bounds    = aircraft_bounds
-                self._reset_camera_to_aircraft()
-            else:
+                if reset_camera:
+                    self._reset_camera_to_aircraft()
+            elif reset_camera:
                 self._scene_bounds = list(boundary.bounds)
                 self._plotter.reset_camera()
+
 
             log.info(f"Results displayed: field={field}, time={reader.time_values[-1]}")
         except Exception as exc:
@@ -354,7 +357,9 @@ class ViewportWidget(QWidget):
                 line_width=2,
                 render_lines_as_tubes=True,
                 name="streamlines",
+                reset_camera=False,
             )
+
             self._plotter.render()
             log.info("Streamlines added to viewport")
         except Exception as exc:

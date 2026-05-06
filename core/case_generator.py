@@ -56,10 +56,14 @@ class CaseGenerator:
             undefined=jinja2.StrictUndefined,
         )
 
-    def generate(self) -> str:
+    def generate(self, custom_folder: str | None = None) -> str:
         """Create case directory, render all templates, return its path."""
-        stamp    = datetime.now().strftime("%Y%m%d_%H%M%S")
-        case_dir = config.CASES_DIR / f"run_{stamp}"
+        if custom_folder:
+            case_dir = config.CASES_DIR / custom_folder
+        else:
+            stamp    = datetime.now().strftime("%Y%m%d_%H%M%S")
+            case_dir = config.CASES_DIR / f"run_{stamp}"
+
 
         (case_dir / "0").mkdir(parents=True)
         (case_dir / "constant" / "triSurface").mkdir(parents=True)
@@ -130,8 +134,9 @@ class CaseGenerator:
             # Parallelism
             "n_cores": m.get("n_cores", 1),
             # Solver control
-            "end_time":       config.DEFAULT_END_TIME,
+            "end_time":       m.get("end_time", config.DEFAULT_END_TIME),
             "write_interval": config.DEFAULT_WRITE_INTERVAL,
+
             # forceCoeffs reference values
             "U_mag":  U,
             "drag_x": drag_x,
