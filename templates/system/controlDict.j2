@@ -65,8 +65,9 @@ functions
     residuals
     {
         type            residuals;
-        libs            ( "libsampling.so" );
+        libs            ( "libutilityFunctionObjects.so" );
         writeControl    timeStep;
         writeInterval   1;
+        fields          ( p U k omega );
     }
 }

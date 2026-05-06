@@ -1,0 +1,41 @@
+{
+  "name": "test",
+  "study_id": "test_20260506_144940",
+  "created": "2026-05-06T14:49:40",
+  "modified": "2026-05-06T15:32:35",
+  "description": "",
+  "geometry_path": "C:\\Users\\Chirag\\Documents\\openfoam_gui\\cases\\geometry\\sphere_50mm_radius.stl",
+  "case_dir": "C:\\Users\\Chirag\\Documents\\openfoam_gui\\cases\\run_20260506_144913",
+  "conditions": {
+    "airspeed": 10.0,
+    "aoa_deg": 0.0,
+    "altitude": 1000.0,
+    "rho": 1.1116522819524908,
+    "nu": 1.581217727342673e-05,
+    "mu": 1.7577642948642136e-05,
+    "speed_of_sound": 336.43228962155223,
+    "Ux": 10.0,
+    "Uy": 0.0,
+    "Uz": 0.0,
+    "lRef": 0.25,
+    "Aref": 0.15
+  },
+  "mesh_settings": {
+    "refinement_min": 2,
+    "refinement_max": 4,
+    "surface_layers": 2,
+    "n_cores": 20
+  },
+  "solver_settings": {
+    "end_time": 500,
+    "n_cores": 20
+  },
+  "results": {
+    "time": 500.0,
+    "CmPitch": 411.4061,
+    "Cd": 20820.04,
+    "Cl": -2711.971,
+    "solved": true
+  },
+  "ui_state": {}
+}
