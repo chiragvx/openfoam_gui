@@ -344,7 +344,10 @@ class ViewportWidget(QWidget):
                 if block is None or block.n_cells == 0:
                     continue
 
-                is_domain = any(x in name.lower() for x in ["inlet", "outlet", "wall", "front", "back", "top", "bottom", "ground"])
+                is_domain = any(x in name.lower() for x in [
+                    "inlet", "outlet", "wall", "front", "back", "top", "bottom", 
+                    "ground", "sides", "atmosphere", "symmetry", "boundary"
+                ])
                 
                 if name == "aircraft" or not is_domain:
                     aircraft_bounds = list(block.bounds)
@@ -359,16 +362,19 @@ class ViewportWidget(QWidget):
                     )
 
                 else:
+                    # Hide domain patches by default
                     actor_name = f"domain_{name}"
                     actor = self._plotter.add_mesh(
                         block,
                         color="#888888",
-                        opacity=0.08,
+                        opacity=0.05,
                         show_edges=False,
                         name=actor_name,
+                        scalars=None, # Explicitly disable scalars for domain
+                        show_scalar_bar=False,
                     )
                     if hasattr(actor, "SetVisibility"):
-                        actor.SetVisibility(False)
+                        actor.SetVisibility(self._domain_visible)
                     self._domain_actor_names.add(actor_name)
 
             # Centre camera on aircraft so orbit/pan feel natural

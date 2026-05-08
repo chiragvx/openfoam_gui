@@ -183,6 +183,38 @@ class CaseGenerator:
         }
 
     @staticmethod
+    def update_case_conditions(case_dir: str, conditions: dict):
+        """Update 0/U and system/controlDict in an existing case without re-meshing."""
+        from core.geometry import GeometryProcessor
+        log.info(f"Updating flow conditions in {case_dir}...")
+        
+        # We need the domain bounds to calculate the context again
+        # For simplicity, we assume the geometry is aircraft.stl
+        case_path = Path(case_dir)
+        stl_path = case_path / "constant" / "triSurface" / "aircraft.stl"
+        if not stl_path.exists():
+            log.warning("Original STL not found in case, cannot update conditions precisely.")
+            return
+
+        geom = GeometryProcessor()
+        domain = geom.compute_domain(str(stl_path), altitude=conditions.get("altitude", 100.0))
+        
+        # Instantiate a temporary generator to use its context logic
+        # mesh_settings aren't needed for U/controlDict update
+        gen = CaseGenerator(str(stl_path), conditions, {"refinement_min":1, "refinement_max":1, "surface_layers":1})
+        ctx = gen._build_context(domain)
+
+        # Update 0/U
+        u_tmpl = gen._jinja.get_template("0/U.j2")
+        (case_path / "0" / "U").write_text(u_tmpl.render(**ctx), encoding="utf-8")
+        
+        # Update system/controlDict (for forceCoeffs)
+        cd_tmpl = gen._jinja.get_template("system/controlDict.j2")
+        (case_path / "system" / "controlDict").write_text(cd_tmpl.render(**ctx), encoding="utf-8")
+        
+        log.info(f"Case updated with new AoA: {conditions.get('aoa_deg')} deg")
+
+    @staticmethod
     def _k(U: float, I: float = 0.001) -> float:
         return max(1.5 * (U * I) ** 2, 1e-10)
 

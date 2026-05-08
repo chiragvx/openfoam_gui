@@ -145,6 +145,10 @@ class MeshPanel(QWidget):
             self._mw.solver_panel.set_case_dir(case_dir)
             log.info("Mesh generation complete")
             
+            # Show the generated mesh surface in the viewport
+            self._mw.viewport.show_results(case_dir, field="p", reset_camera=True)
+            self._mw.results_panel.set_case_dir(case_dir)
+            
             # Auto-save study if available
             main_win = self.window()
             if hasattr(main_win, "_save_study"):

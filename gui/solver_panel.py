@@ -3,7 +3,7 @@ import os
 
 from PyQt6.QtCore import QThread, pyqtSignal
 from PyQt6.QtWidgets import (
-    QWidget, QVBoxLayout, QLabel, QPushButton,
+    QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
     QGroupBox, QFormLayout, QSpinBox, QProgressBar,
 )
 
@@ -75,10 +75,39 @@ class SolverPanel(QWidget):
         grp.setLayout(form)
         layout.addWidget(grp)
 
+        # Physical Rotation
+        rot_grp = QGroupBox("Physical Mesh Rotation")
+        rot_lay = QHBoxLayout()
+        
+        self._mesh_rx = QSpinBox(); self._mesh_rx.setRange(-360, 360); self._mesh_rx.setSuffix("\u00b0")
+        self._mesh_ry = QSpinBox(); self._mesh_ry.setRange(-360, 360); self._mesh_ry.setSuffix("\u00b0")
+        self._mesh_rz = QSpinBox(); self._mesh_rz.setRange(-360, 360); self._mesh_rz.setSuffix("\u00b0")
+        
+        rot_lay.addWidget(QLabel("X:"))
+        rot_lay.addWidget(self._mesh_rx)
+        rot_lay.addWidget(QLabel("Y:"))
+        rot_lay.addWidget(self._mesh_ry)
+        rot_lay.addWidget(QLabel("Z:"))
+        rot_lay.addWidget(self._mesh_rz)
+        
+        self._rot_btn = QPushButton("Rotate Mesh")
+        self._rot_btn.setEnabled(False)
+        self._rot_btn.clicked.connect(self._on_rotate_mesh)
+        rot_lay.addWidget(self._rot_btn)
+        
+        rot_grp.setLayout(rot_lay)
+        layout.addWidget(rot_grp)
+
         self._run_btn = QPushButton("Run Solver")
         self._run_btn.setEnabled(False)
         self._run_btn.clicked.connect(self._on_run)
         layout.addWidget(self._run_btn)
+
+        self._update_btn = QPushButton("Update Conditions (No Re-mesh)")
+        self._update_btn.setEnabled(False)
+        self._update_btn.setToolTip("Apply new AoA/Airspeed from Conditions tab to this case without re-meshing")
+        self._update_btn.clicked.connect(self._on_update_conditions)
+        layout.addWidget(self._update_btn)
 
         self._progress = QProgressBar()
         self._progress.setRange(0, 100)
@@ -96,6 +125,8 @@ class SolverPanel(QWidget):
     def set_case_dir(self, case_dir: str):
         self._case_dir = case_dir
         self._run_btn.setEnabled(True)
+        self._update_btn.setEnabled(True)
+        self._rot_btn.setEnabled(True)
         self._status.setText(f"Ready — {case_dir}")
 
     def _on_run(self):
@@ -139,6 +170,61 @@ class SolverPanel(QWidget):
         text = re.sub(r"(endTime\s+)\d+", rf"\g<1>{self._iters.value()}", text)
         ctrl.write_text(text, encoding="utf-8")
         log.debug(f"controlDict endTime patched to {self._iters.value()}")
+
+    def _on_update_conditions(self):
+        if not self._case_dir:
+            return
+        
+        from core.case_generator import CaseGenerator
+        cond = self._mw.get_flight_conditions()
+        
+        try:
+            CaseGenerator.update_case_conditions(self._case_dir, cond)
+            self._status.setText(f"Conditions updated to {cond.get('aoa_deg')}\u00b0. Ready to Solve.")
+            self._mw.set_status("Flow conditions updated (mesh preserved)")
+        except Exception as e:
+            log.error(f"Failed to update conditions: {e}")
+            self._status.setText(f"Update failed: {e}")
+
+    def _on_rotate_mesh(self):
+        if not self._case_dir:
+            return
+        
+        rx = self._mesh_rx.value()
+        ry = self._mesh_ry.value()
+        rz = self._mesh_rz.value()
+        if rx == 0 and ry == 0 and rz == 0:
+            return
+            
+        self._status.setText("Rotating mesh points...")
+        self._rot_btn.setEnabled(False)
+        
+        from core.wsl_runner import WSLRunner
+        runner = WSLRunner(config.WSL_DISTRO)
+        
+        # OpenFOAM 11 uses a specific syntax: transformPoints "Rx=deg, Ry=deg, Rz=deg"
+        rot_parts = []
+        if rx != 0: rot_parts.append(f"Rx={rx}")
+        if ry != 0: rot_parts.append(f"Ry={ry}")
+        if rz != 0: rot_parts.append(f"Rz={rz}")
+        
+        rot_str = ", ".join(rot_parts)
+        full_cmd = f'transformPoints "{rot_str}"'
+        
+        def handle_done(ok, msg):
+            self._rot_btn.setEnabled(True)
+            if ok:
+                self._status.setText("Mesh rotated successfully.")
+                self._mw.set_status(f"Mesh rotated: X={rx} Y={ry} Z={rz}")
+                # Refresh viewport
+                self._mw.results_panel.set_case_dir(self._case_dir)
+            else:
+                self._status.setText(f"Rotation failed: {msg}")
+                
+        # We'll run this in a thread if it's slow, but transformPoints is usually fast
+        # For simplicity, we use run_command directly here but it might block UI briefly
+        ok, msg = runner.run_command(full_cmd, cwd_windows=self._case_dir)
+        handle_done(ok, msg)
 
     def _on_done(self, ok: bool, msg: str):
         self._run_btn.setEnabled(True)
