@@ -14,6 +14,8 @@ log = logging.getLogger(__name__)
 
 class _SolverWorker(QThread):
     finished = pyqtSignal(bool, str)
+    progress = pyqtSignal(int)
+    log_line = pyqtSignal(str)
 
     def __init__(self, case_dir: str, n_cores: int):
         super().__init__()
@@ -22,8 +24,22 @@ class _SolverWorker(QThread):
 
     def run(self):
         from core.solver_runner import SolverRunner
+        import re
+
+        # Regex for "Time = 123"
+        time_regex = re.compile(r"^Time\s*=\s*(\d+)")
+
+        def handle_line(line: str):
+            self.log_line.emit(line)
+            match = time_regex.search(line)
+            if match:
+                try:
+                    self.progress.emit(int(match.group(1)))
+                except ValueError:
+                    pass
+
         runner = SolverRunner(self._case_dir, config.WSL_DISTRO, self._n_cores)
-        ok, msg = runner.run()
+        ok, msg = runner.run(on_line=handle_line)
         self.finished.emit(ok, msg)
 
 
@@ -34,7 +50,7 @@ class SolverPanel(QWidget):
         super().__init__()
         self._mw       = main_window
         self._case_dir: str | None = None
-        self._worker: QThread | None = None
+        self._worker: _SolverWorker | None = None
         self._setup_ui()
 
     def _setup_ui(self):
@@ -65,7 +81,8 @@ class SolverPanel(QWidget):
         layout.addWidget(self._run_btn)
 
         self._progress = QProgressBar()
-        self._progress.setRange(0, 0)
+        self._progress.setRange(0, 100)
+        self._progress.setValue(0)
         self._progress.setVisible(False)
         layout.addWidget(self._progress)
 
@@ -86,16 +103,30 @@ class SolverPanel(QWidget):
             return
         self._patch_end_time()
 
+        max_iters = self._iters.value()
         n_cores = self._cores.value()
+        
         self._run_btn.setEnabled(False)
+        self._progress.setRange(0, max_iters)
+        self._progress.setValue(0)
         self._progress.setVisible(True)
-        self._status.setText(f"Running solver ({n_cores} core(s))…")
+        self._status.setText(f"Initialising solver…")
         self._mw.set_status(f"Solver running ({n_cores} core(s))…")
         log.info(f"Solver started in {self._case_dir} using {n_cores} core(s)")
 
         self._worker = _SolverWorker(self._case_dir, n_cores)
+        self._worker.progress.connect(self._on_progress)
+        self._worker.log_line.connect(self._on_log_line)
         self._worker.finished.connect(self._on_done)
         self._worker.start()
+
+    def _on_progress(self, val: int):
+        self._progress.setValue(val)
+        self._status.setText(f"Solving: iteration {val} of {self._iters.value()}")
+
+    def _on_log_line(self, line: str):
+        # We could also pipe this to the main window log, but it's already logged by WSLRunner
+        pass
 
     def _patch_end_time(self):
         """Update endTime in controlDict to match the UI spinbox."""

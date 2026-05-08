@@ -74,6 +74,30 @@ class ThemeManager:
             padding: 4px;
             border-radius: 2px;
         }
+        QSpinBox::up-button, QDoubleSpinBox::up-button, QSpinBox::down-button, QDoubleSpinBox::down-button {
+            background-color: #2d2d2d;
+            border-left: 1px solid #454545;
+            width: 20px;
+        }
+        QSpinBox::up-button, QDoubleSpinBox::up-button {
+            border-bottom: 1px solid #454545;
+        }
+        QSpinBox::up-arrow, QDoubleSpinBox::up-arrow {
+            image: none;
+            border-left: 4px solid transparent;
+            border-right: 4px solid transparent;
+            border-bottom: 5px solid #d4d4d4;
+            width: 0;
+            height: 0;
+        }
+        QSpinBox::down-arrow, QDoubleSpinBox::down-arrow {
+            image: none;
+            border-left: 4px solid transparent;
+            border-right: 4px solid transparent;
+            border-top: 5px solid #d4d4d4;
+            width: 0;
+            height: 0;
+        }
         QComboBox QAbstractItemView {
             background-color: #2d2d2d;
             color: #d4d4d4;
@@ -188,6 +212,30 @@ class ThemeManager:
             border: 1px solid #ccc;
             padding: 4px;
             border-radius: 2px;
+        }
+        QSpinBox::up-button, QDoubleSpinBox::up-button, QSpinBox::down-button, QDoubleSpinBox::down-button {
+            background-color: #e1e1e1;
+            border-left: 1px solid #ccc;
+            width: 20px;
+        }
+        QSpinBox::up-button, QDoubleSpinBox::up-button {
+            border-bottom: 1px solid #ccc;
+        }
+        QSpinBox::up-arrow, QDoubleSpinBox::up-arrow {
+            image: none;
+            border-left: 4px solid transparent;
+            border-right: 4px solid transparent;
+            border-bottom: 5px solid #333;
+            width: 0;
+            height: 0;
+        }
+        QSpinBox::down-arrow, QDoubleSpinBox::down-arrow {
+            image: none;
+            border-left: 4px solid transparent;
+            border-right: 4px solid transparent;
+            border-top: 5px solid #333;
+            width: 0;
+            height: 0;
         }
         QComboBox QAbstractItemView {
             background-color: white;

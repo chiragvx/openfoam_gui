@@ -6,6 +6,7 @@ from PyQt6.QtCore import Qt, QThread, pyqtSignal, QTimer
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
     QGroupBox, QFormLayout, QComboBox, QSpinBox, QDoubleSpinBox, QSlider,
+    QColorDialog,
 )
 
 log = logging.getLogger(__name__)
@@ -128,6 +129,7 @@ class ResultsPanel(QWidget):
         self._stream_timer = QTimer()
         self._stream_timer.setSingleShot(True)
         self._stream_timer.timeout.connect(self._on_show_streamlines)
+        self._stream_color: str | None = None
         self._setup_ui()
         self.refresh_theme()
 
@@ -189,7 +191,7 @@ class ResultsPanel(QWidget):
 
         lines_form = QFormLayout()
         self._stream_n = QSpinBox()
-        self._stream_n.setRange(5, 60)
+        self._stream_n.setRange(5, 120)
         self._stream_n.setValue(20)
         self._stream_n.setFixedWidth(100)
         self._stream_n.setToolTip("Number of seed lines along the chosen axis")
@@ -206,7 +208,7 @@ class ResultsPanel(QWidget):
         self._offset_spin.setValue(0.0)
         self._offset_spin.setSuffix(" %")
         self._offset_spin.setDecimals(1)
-        self._offset_spin.setFixedWidth(100)
+        self._offset_spin.setFixedWidth(110)
         self._offset_spin.setToolTip("Offset as percentage of model size")
         
         self._offset_slider = QSlider(Qt.Orientation.Horizontal)
@@ -222,6 +224,32 @@ class ResultsPanel(QWidget):
 
         self._offset_spin.valueChanged.connect(self._on_offset_spin_changed)
         self._offset_slider.valueChanged.connect(self._on_offset_slider_changed)
+
+        # Thickness and Color
+        prop_row = QHBoxLayout()
+        prop_row.addWidget(QLabel("Width:"))
+        self._stream_width = QSpinBox()
+        self._stream_width.setRange(1, 10)
+        self._stream_width.setValue(2)
+        self._stream_width.setFixedWidth(80)
+        self._stream_width.valueChanged.connect(self._maybe_auto_update)
+        prop_row.addWidget(self._stream_width)
+        
+        prop_row.addSpacing(10)
+        self._color_btn = QPushButton("Color")
+        self._color_btn.setFixedHeight(24)
+        self._color_btn.clicked.connect(self._on_choose_stream_color)
+        prop_row.addWidget(self._color_btn)
+        
+        self._reset_color_btn = QPushButton("\u21ba") # Reset icon
+        self._reset_color_btn.setToolTip("Reset to velocity colormap")
+        self._reset_color_btn.setFixedHeight(24)
+        self._reset_color_btn.setFixedWidth(28)
+        self._reset_color_btn.clicked.connect(self._on_reset_stream_color)
+        prop_row.addWidget(self._reset_color_btn)
+        prop_row.addStretch()
+        
+        stream_vbox.addLayout(prop_row)
 
         stream_grp.setLayout(stream_vbox)
         layout.addWidget(stream_grp)
@@ -374,13 +402,20 @@ class ResultsPanel(QWidget):
         if not self._case_dir:
             return
         field = self._combo.currentData()
-        # Use direct conditions from study if possible, or fallback to panel
-        cond = self._mw.conditions_panel.get_conditions()
+
+        # Prefer the saved conditions for the selected bulk run; fall back to
+        # the live conditions panel for single-run mode.
+        run_idx = self._run_combo.currentIndex()
+        runs    = getattr(getattr(self._mw, "_current_study", None), "runs", [])
+        if self._run_grp.isVisible() and 0 <= run_idx < len(runs):
+            cond = runs[run_idx].get("conditions") or self._mw.conditions_panel.get_conditions()
+        else:
+            cond = self._mw.conditions_panel.get_conditions()
+
         log.info(f"Loading field: {field}")
 
         self._mw.viewport.show_results(self._case_dir, field, reset_camera=reset_camera)
         self._mw.viewport.show_wind_arrow(cond["airspeed"], cond["aoa_deg"])
-
 
         self._domain_shown = False
         self._domain_btn.setText("Show Domain Box")
@@ -440,7 +475,8 @@ class ResultsPanel(QWidget):
         self._stream_worker.start()
 
     def _on_streamlines_ready(self, stream):
-        self._mw.viewport.add_streamlines_mesh(stream)
+        w = self._stream_width.value()
+        self._mw.viewport.add_streamlines_mesh(stream, width=w, color=self._stream_color)
         self._stream_show_btn.setEnabled(True)
         self._stream_clear_btn.setEnabled(True)
         self._status.setText(f"Streamlines shown ({self._stream_axis}-plane)")
@@ -459,6 +495,20 @@ class ResultsPanel(QWidget):
         self._mw.viewport.clear_streamlines()
         self._status.setText("Streamlines cleared")
 
+    def _on_choose_stream_color(self):
+        color = QColorDialog.getColor()
+        if color.isValid():
+            self._stream_color = color.name()
+            self._color_btn.setStyleSheet(f"background: {self._stream_color}; color: {'white' if color.lightness() < 128 else 'black'};")
+            if self._streamlines_active:
+                self._on_show_streamlines()
+
+    def _on_reset_stream_color(self):
+        self._stream_color = None
+        self._color_btn.setStyleSheet("")
+        if self._streamlines_active:
+            self._on_show_streamlines()
+
     # ------------------------------------------------------------------
     def _load_aero_summary(self, cond: dict):
         from core.results_reader import ResultsReader
@@ -469,46 +519,96 @@ class ResultsPanel(QWidget):
 
         Cl = coeffs["Cl"]
         Cd = coeffs["Cd"]
-        Cm = coeffs["CmPitch"]
+        Cm = coeffs.get("CmPitch", 0.0)
         ld = Cl / Cd if abs(Cd) > 1e-9 else float("inf")
 
-        q      = 0.5 * cond["rho"] * cond["airspeed"] ** 2
-        Aref   = cond.get("Aref", 0.15)
-        lift_N = q * Aref * Cl
-        drag_N = q * Aref * Cd
+        # Use the reference values that OpenFOAM actually used when it computed
+        # the coefficients (read from the .dat header). This prevents the
+        # GUI-panel Aref/rho from silently corrupting the dimensional forces.
+        Aref_sim = coeffs.get("Aref_sim") or cond.get("Aref", 0.15)
+        # rhoInf is not written by OF to the .dat header (returns None),
+        # so fall back to the altitude-correct ISA density from the run conditions.
+        rho_sim  = coeffs.get("rho_sim")  or cond.get("rho",  1.225)
+        U_sim    = coeffs.get("U_sim")    or cond.get("airspeed", 1.0)
+
+        q_sim  = 0.5 * rho_sim * U_sim ** 2
+        lift_N = q_sim * Aref_sim * Cl
+        drag_N = q_sim * Aref_sim * Cd
 
         self._lbl_cl.setText(f"{Cl:.4f}")
         self._lbl_cd.setText(f"{Cd:.4f}")
-        self._lbl_ld.setText(f"{ld:.2f}" if ld != float("inf") else "∞")
+        self._lbl_ld.setText(f"{ld:.2f}" if ld != float("inf") else "\u221e")
         self._lbl_cm.setText(f"{Cm:.4f}")
         self._lbl_lift.setText(f"{lift_N:.2f} N")
         self._lbl_drag.setText(f"{drag_N:.2f} N")
 
         log.info(
-            f"Aero summary — CL={Cl:.4f} CD={Cd:.4f} "
-            f"L/D={ld:.2f} Lift={lift_N:.2f} N Drag={drag_N:.2f} N"
+            f"Aero summary \u2014 CL={Cl:.4f} CD={Cd:.4f} "
+            f"L/D={ld:.2f} Lift={lift_N:.2f} N Drag={drag_N:.2f} N "
+            f"[sim: Aref={Aref_sim} rho={rho_sim:.4f} U={U_sim}]"
         )
     def _on_export_single(self):
         from PyQt6.QtWidgets import QFileDialog
+        from core.results_reader import ResultsReader
         import csv
         
         path, _ = QFileDialog.getSaveFileName(self, "Export Single Report", "aero_summary.csv", "CSV Files (*.csv)")
         if not path: return
         
         try:
+            coeffs = ResultsReader.read_force_coeffs(self._case_dir)
+            resid  = ResultsReader.read_residuals(self._case_dir)
+            yplus  = ResultsReader.read_y_plus(self._case_dir)
+
             with open(path, "w", newline="", encoding="utf-8") as f:
                 writer = csv.writer(f)
-                writer.writerow(["Parameter", "Value"])
-                writer.writerow(["CL (lift coeff)", self._lbl_cl.text()])
-                writer.writerow(["CD (drag coeff)", self._lbl_cd.text()])
-                writer.writerow(["L/D ratio", self._lbl_ld.text()])
-                writer.writerow(["CM (pitch moment)", self._lbl_cm.text()])
-                writer.writerow(["Lift force", self._lbl_lift.text()])
-                writer.writerow(["Drag force", self._lbl_drag.text()])
-            log.info(f"Report exported to {path}")
+                writer.writerow(["--- AI-Ready Aerodynamic Report ---"])
+                writer.writerow(["Project", self._mw._current_study.name if self._mw._current_study else "Unnamed"])
+                writer.writerow(["Timestamp", Path(self._case_dir).name])
+                writer.writerow([])
+
+                writer.writerow(["[AERO COEFFICIENTS]"])
+                writer.writerow(["Parameter", "Value", "Notes"])
+                writer.writerow(["CL", self._lbl_cl.text(), "Lift Coefficient"])
+                writer.writerow(["CD", self._lbl_cd.text(), "Drag Coefficient"])
+                writer.writerow(["L/D", self._lbl_ld.text(), "Lift-to-Drag Efficiency"])
+                writer.writerow(["CmPitch", self._lbl_cm.text(), "Pitching Moment"])
+                writer.writerow(["Lift Force", self._lbl_lift.text()])
+                writer.writerow(["Drag Force", self._lbl_drag.text()])
+                if coeffs:
+                    writer.writerow(["CmRoll", f"{(coeffs.get('CmRoll') or 0.0):.6f}"])
+                    writer.writerow(["CmYaw", f"{(coeffs.get('CmYaw') or 0.0):.6f}"])
+                    writer.writerow(["Cs", f"{(coeffs.get('Cs') or 0.0):.6f}", "Side Force Coeff"])
+                writer.writerow([])
+
+                if resid:
+                    writer.writerow(["[SOLVER CONVERGENCE (RESIDUALS)]"])
+                    writer.writerow(["Field", "Final Residual"])
+                    for field, val in resid.items():
+                        writer.writerow([field, f"{(val or 0.0):.2e}"])
+                    writer.writerow([])
+
+                if yplus:
+                    writer.writerow(["[MESH QUALITY (Y+)]"])
+                    writer.writerow(["Metric", "Value"])
+                    writer.writerow(["Patch", yplus.get("patch")])
+                    writer.writerow(["Min Y+", f"{(yplus.get('min') or 0.0):.4f}"])
+                    writer.writerow(["Max Y+", f"{(yplus.get('max') or 0.0):.4f}"])
+                    writer.writerow(["Average Y+", f"{(yplus.get('average') or 0.0):.4f}"])
+                    writer.writerow([])
+
+                writer.writerow(["[SIMULATION PARAMETERS]"])
+                if coeffs:
+                    writer.writerow(["Reference Area (Aref)", f"{(coeffs.get('Aref_sim') or 0.0):.6f}"])
+                    writer.writerow(["Reference Length (lRef)", f"{(coeffs.get('lRef_sim') or 0.0):.6f}"])
+                    writer.writerow(["Sim Density (rho)", f"{(coeffs.get('rho_sim') or 0.0):.6f}"])
+                    writer.writerow(["Sim Velocity (U)", f"{(coeffs.get('U_sim') or 0.0):.6f}"])
+
+            log.info(f"Enhanced report exported to {path}")
             self._status.setText(f"Exported: {Path(path).name}")
         except Exception as e:
-            log.error(f"Export failed: {e}")
+            log.error(f"Enhanced export failed: {e}")
+            self._status.setText(f"Export Error: {e}")
 
     def _on_export_bulk(self):
         from PyQt6.QtWidgets import QFileDialog
@@ -543,7 +643,7 @@ class ResultsPanel(QWidget):
                         f"{Cl:.4f}",
                         f"{Cd:.4f}",
                         f"{ld:.2f}",
-                        f"{res.get('CmPitch', 0):.4f}"
+                        f"{(res.get('CmPitch') or 0.0):.4f}"
                     ])
             log.info(f"Bulk report exported to {path}")
             self._status.setText(f"Bulk Exported: {Path(path).name}")

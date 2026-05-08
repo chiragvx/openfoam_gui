@@ -1,12 +1,14 @@
 import logging
+import os
+import config
 
 from PyQt6.QtCore import Qt, QTimer
 from PyQt6.QtWidgets import (
-    QMainWindow, QWidget, QHBoxLayout,
+    QMainWindow, QWidget, QHBoxLayout, QVBoxLayout,
     QTabWidget, QSplitter, QStatusBar,
-    QDialog, QFileDialog,
+    QDialog, QFileDialog, QLabel,
 )
-from PyQt6.QtGui import QAction, QKeySequence
+from PyQt6.QtGui import QAction, QKeySequence, QIcon, QPixmap
 
 from core.study_manager import StudyManager, Study
 from pathlib import Path
@@ -44,6 +46,7 @@ class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Rekon labs CFD")
+        self.setWindowIcon(QIcon("logo.png"))
         self.resize(1400, 900)
         self._current_study: Study | None = None
         self._apply_initial_theme()
@@ -59,9 +62,32 @@ class MainWindow(QMainWindow):
         central.setHandleWidth(6)
         central.setChildrenCollapsible(False)
 
-        # Left: workflow tabs
+        # Left: workflow tabs container
+        left_panel = QWidget()
+        left_layout = QVBoxLayout(left_panel)
+        left_layout.setContentsMargins(10, 10, 10, 10)
+        left_layout.setSpacing(15)
+
+        # Logo/Brand header
+        brand_container = QWidget()
+        brand_layout = QHBoxLayout(brand_container)
+        brand_layout.setContentsMargins(5, 5, 5, 5)
+        
+        logo_label = QLabel()
+        logo_pixmap = QPixmap("logo.png").scaled(32, 32, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)
+        logo_label.setPixmap(logo_pixmap)
+        brand_layout.addWidget(logo_label)
+
+        brand_text = QLabel("REKON LABS")
+        brand_text.setStyleSheet("font-weight: 900; font-size: 14pt; letter-spacing: 2px; color: #409eff;")
+        brand_layout.addWidget(brand_text)
+        brand_layout.addStretch()
+        
+        left_layout.addWidget(brand_container)
+
         self.tabs = QTabWidget()
         self.tabs.setMinimumWidth(300)
+        left_layout.addWidget(self.tabs)
 
         # Right: viewport + log splitter
         vertical_splitter = QSplitter(Qt.Orientation.Vertical)
@@ -89,7 +115,7 @@ class MainWindow(QMainWindow):
         self.tabs.addTab(self.bulk_panel,        "6. Bulk Testing")
 
         
-        central.addWidget(self.tabs)
+        central.addWidget(left_panel)
         central.addWidget(vertical_splitter)
         central.setSizes([390, 1010])
 
@@ -149,6 +175,11 @@ class MainWindow(QMainWindow):
         save_act.setShortcut(QKeySequence.StandardKey.Save)
         save_act.triggered.connect(self._save_study)
         file_menu.addAction(save_act)
+
+        save_as_act = QAction("Save Study &As…", self)
+        save_as_act.setShortcut(QKeySequence("Ctrl+Shift+S"))
+        save_as_act.triggered.connect(self._save_study_as)
+        file_menu.addAction(save_as_act)
 
         export_act = QAction("&Export Study… (.zip)", self)
         export_act.triggered.connect(self._export_study)
@@ -238,6 +269,36 @@ class MainWindow(QMainWindow):
             
         StudyManager.save(s)
         self.set_status(f"Study saved: {s.name}")
+
+    def _save_study_as(self):
+        if self._current_study is None:
+            self._new_study()
+            return
+
+        from gui.study_dialog import NewStudyDialog
+        dlg = NewStudyDialog(self)
+        dlg.setWindowTitle("Save Study As")
+        dlg._name.setText(f"{self._current_study.name} (Copy)")
+        
+        if dlg.exec() == QDialog.DialogCode.Accepted:
+            import copy
+            # Create a shallow copy and reset identity
+            s = self._current_study
+            new_study = Study(
+                name=dlg.name,
+                description=dlg.description,
+                geometry_path=s.geometry_path,
+                conditions=copy.deepcopy(s.conditions),
+                mesh_settings=copy.deepcopy(s.mesh_settings),
+                solver_settings=copy.deepcopy(s.solver_settings),
+                ui_state=copy.deepcopy(s.ui_state)
+            )
+            # We explicitly DON'T copy case_dir, results, or runs 
+            # to keep the duplicate clean for a new simulation branch.
+            
+            StudyManager.save(new_study)
+            self._apply_study(new_study)
+            self.set_status(f"Project duplicated as: {new_study.name}")
 
     def _export_study(self):
         if self._current_study is None:

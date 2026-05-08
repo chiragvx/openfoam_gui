@@ -80,8 +80,41 @@ class CaseGenerator:
         )
         ctx = self._build_context(domain)
 
+        # Determine templates to render
+        mesher = self._mesh_settings.get("mesher", config.DEFAULT_MESHER)
+        templates_to_render = []
+        
+        # Base templates (always needed)
+        base_templates = [
+            ("system/controlDict.j2",               "system/controlDict"),
+            ("system/fvSchemes.j2",                 "system/fvSchemes"),
+            ("system/fvSolution.j2",                "system/fvSolution"),
+            ("system/decomposeParDict.j2",          "system/decomposeParDict"),
+            ("constant/transportProperties.j2",     "constant/transportProperties"),
+            ("constant/turbulenceProperties.j2",    "constant/turbulenceProperties"),
+            ("0/U.j2",                              "0/U"),
+            ("0/p.j2",                              "0/p"),
+            ("0/k.j2",                              "0/k"),
+            ("0/omega.j2",                          "0/omega"),
+            ("0/nut.j2",                            "0/nut"),
+        ]
+        templates_to_render.extend(base_templates)
+
+        if mesher == "cfmesh":
+            templates_to_render.append(("system/meshDict.j2", "system/meshDict"))
+            # cfMesh still often needs blockMesh for the background domain, 
+            # though cartesianMesh can generate its own background if configured.
+            # In our case, we'll keep blockMesh for consistency.
+            templates_to_render.append(("system/blockMeshDict.j2", "system/blockMeshDict"))
+        else:
+            # snappyHexMesh pipeline
+            templates_to_render.append(("system/blockMeshDict.j2", "system/blockMeshDict"))
+            templates_to_render.append(("system/snappyHexMeshDict.j2", "system/snappyHexMeshDict"))
+            templates_to_render.append(("system/surfaceFeatureExtractDict.j2", "system/surfaceFeatureExtractDict"))
+            templates_to_render.append(("system/surfaceFeaturesDict.j2", "system/surfaceFeaturesDict"))
+
         # Render every template
-        for tmpl_name, rel_dest in self.TEMPLATE_MAP:
+        for tmpl_name, rel_dest in templates_to_render:
             tmpl = self._jinja.get_template(tmpl_name)
             dest = case_dir / rel_dest
             dest.write_text(tmpl.render(**ctx), encoding="utf-8")
@@ -90,7 +123,7 @@ class CaseGenerator:
         # Touchfile required by pv.OpenFOAMReader
         (case_dir / "case.foam").touch()
 
-        log.info(f"Case generated: {case_dir}")
+        log.info(f"Case generated: {case_dir} using {mesher}")
         return str(case_dir)
 
     # ------------------------------------------------------------------
@@ -121,6 +154,8 @@ class CaseGenerator:
             "ref_min":  m["refinement_min"],
             "ref_max":  m["refinement_max"],
             "n_layers": m["surface_layers"],
+            # cfMesh specific
+            "cfmesh_cell_size": m.get("cfmesh_cell_size", config.DEFAULT_CFMESH_CELL_SIZE),
             # Velocity components (AoA rotation in XZ-plane)
             "Ux": c["Ux"],
             "Uy": c["Uy"],

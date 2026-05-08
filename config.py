@@ -30,10 +30,14 @@ DOMAIN_DOWNSTREAM_FACTOR = 10
 DOMAIN_LATERAL_FACTOR = 4
 DOMAIN_VERTICAL_FACTOR = 4
 
-# snappyHexMesh defaults
+# Mesh defaults
+DEFAULT_MESHER = "snappy"  # "snappy" or "cfmesh"
 DEFAULT_REFINEMENT_MIN = 3
 DEFAULT_REFINEMENT_MAX = 5
 DEFAULT_SURFACE_LAYERS = 3
+
+# cfMesh defaults
+DEFAULT_CFMESH_CELL_SIZE = 0.5  # Max cell size in meters (usually proportional to geometry size)
 
 # Parallelism — default to all logical CPU cores visible to WSL2
 DEFAULT_CORES = os.cpu_count() or 1

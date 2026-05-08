@@ -8,13 +8,15 @@ log = logging.getLogger(__name__)
 
 class ResultsReader:
     """
-    Wraps pyvista.OpenFOAMReader.
+    Wraps pyvista.OpenFOAMReader and provides parsers for postProcessing data.
     The case directory must contain a case.foam touchfile.
     """
 
     def __init__(self, case_dir: str):
         foam_file = str(Path(case_dir) / "case.foam")
         self._reader = pv.OpenFOAMReader(foam_file)
+        self._reader.enable_all_cell_arrays()
+        self._reader.enable_all_point_arrays()
         log.info(f"OpenFOAMReader ready — time steps: {self._reader.time_values}")
 
     @property
@@ -34,68 +36,117 @@ class ResultsReader:
     def read_force_coeffs(case_dir: str) -> dict | None:
         """
         Parse postProcessing/forceCoeffs/<t>/forceCoeffs.dat.
-
-        Returns dict: {time, Cd, Cs, Cl, CmRoll, CmPitch, CmYaw}
-        using the last (most converged) data row, or None on failure.
+        Returns the last row as a dict, including reference values from header.
         """
-        pp = Path(case_dir) / "postProcessing" / "forceCoeffs"
-        if not pp.exists():
-            log.warning(f"postProcessing/forceCoeffs not found in {case_dir}")
+        dat_file = ResultsReader._find_latest_dat(case_dir, "forceCoeffs")
+        if not dat_file:
             return None
 
-        # subdirs are named after the start time (usually "0")
+        header_ref, col_map, rows = ResultsReader._parse_dat_file(dat_file)
+        if not rows:
+            return None
+
+        last = rows[-1]
+        result = {}
+        
+        # Standard columns
+        mapping = {
+            "Time": "time", "Cd": "Cd", "Cs": "Cs", "Cl": "Cl",
+            "CmRoll": "CmRoll", "CmPitch": "CmPitch", "CmYaw": "CmYaw"
+        }
+        # Some versions use "Cm" for pitch
+        if "Cm" in col_map and "CmPitch" not in col_map:
+            mapping["Cm"] = "CmPitch"
+
+        for of_name, target in mapping.items():
+            if of_name in col_map:
+                result[target] = last[col_map[of_name]]
+            else:
+                result[target] = 0.0
+
+        # Positional fallbacks for headers-less files
+        if not col_map:
+            if len(last) == 6:
+                result.update({"time": last[0], "CmPitch": last[1], "Cd": last[2], "Cl": last[3]})
+            elif len(last) >= 7:
+                result.update({"time": last[0], "Cd": last[1], "Cs": last[2], "Cl": last[3], "CmRoll": last[4], "CmPitch": last[5]})
+
+        # Reference values
+        result["Aref_sim"] = header_ref.get("Aref")
+        result["lRef_sim"] = header_ref.get("lRef")
+        result["U_sim"]    = header_ref.get("magUInf")
+        result["rho_sim"]  = header_ref.get("rhoInf")
+        return result
+
+    @staticmethod
+    def read_residuals(case_dir: str) -> dict | None:
+        """Parse postProcessing/residuals/<t>/residuals.dat. Returns last row."""
+        dat_file = ResultsReader._find_latest_dat(case_dir, "residuals")
+        if not dat_file: return None
+        _, col_map, rows = ResultsReader._parse_dat_file(dat_file)
+        if not rows: return None
+        
+        last = rows[-1]
+        # Clean up column names (remove tabs/spaces)
+        return {name.strip(): last[idx] for name, idx in col_map.items()}
+
+    @staticmethod
+    def read_y_plus(case_dir: str) -> dict | None:
+        """Parse postProcessing/yPlus/<t>/yPlus.dat. Returns last row stats."""
+        dat_file = ResultsReader._find_latest_dat(case_dir, "yPlus")
+        if not dat_file: return None
+        rows = []
+        with open(dat_file, encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if not line or line.startswith("#"): continue
+                parts = line.split()
+                if len(parts) >= 5: # Time, Patch, Min, Max, Average
+                    try:
+                        rows.append({
+                            "time": float(parts[0]),
+                            "patch": parts[1],
+                            "min": float(parts[2]),
+                            "max": float(parts[3]),
+                            "average": float(parts[4])
+                        })
+                    except ValueError: continue
+        return rows[-1] if rows else None
+
+    @staticmethod
+    def _find_latest_dat(case_dir: str, func_name: str) -> Path | None:
+        pp = Path(case_dir) / "postProcessing" / func_name
+        if not pp.exists(): return None
         subdirs = sorted(
             (d for d in pp.iterdir() if d.is_dir()),
             key=lambda d: float(d.name) if d.name.replace(".", "", 1).lstrip("-").isdigit() else 0,
         )
-        if not subdirs:
-            log.warning("forceCoeffs: no time subdirectory found")
-            return None
+        if not subdirs: return None
+        dat_file = subdirs[0] / f"{func_name}.dat"
+        return dat_file if dat_file.exists() else None
 
-        dat_file = subdirs[0] / "forceCoeffs.dat"
-        if not dat_file.exists():
-            log.warning(f"forceCoeffs.dat missing in {subdirs[0]}")
-            return None
-
-        rows: list[list[float]] = []
-        with open(dat_file, encoding="utf-8") as fh:
-            for line in fh:
-                line = line.strip()
-                if not line or line.startswith("#"):
+    @staticmethod
+    def _parse_dat_file(path: Path):
+        ref = {}
+        col_map = {}
+        rows = []
+        with open(path, encoding="utf-8") as fh:
+            for raw in fh:
+                line = raw.strip()
+                if not line: continue
+                if line.startswith("#"):
+                    # Header metadata
+                    for key in ("Aref", "lRef", "magUInf", "rhoInf"):
+                        if f"# {key}" in line:
+                            try: ref[key] = float(line.split()[-1])
+                            except: pass
+                    # Columns
+                    stripped = line.lstrip("# ").strip()
+                    if stripped.lower().startswith("time"):
+                        names = stripped.split()
+                        col_map = {n.strip(): i for i, n in enumerate(names)}
                     continue
                 try:
                     rows.append([float(v) for v in line.split()])
-                except ValueError:
-                    continue
-
-        if not rows:
-            log.warning("forceCoeffs.dat contained no numeric data")
-            return None
-
-        last = rows[-1]
-        # OF11 columns: Time  Cm  Cd  Cl  Cl(f)  Cl(r)
-        # Older OF columns: Time Cd Cs Cl CmRoll CmPitch CmYaw ...
-        # Detect layout by column count.
-        try:
-            if len(last) == 6:
-                # OF11 compact format
-                return {
-                    "time":    last[0],
-                    "CmPitch": last[1],
-                    "Cd":      last[2],
-                    "Cl":      last[3],
-                }
-            else:
-                # Legacy 7+ column format
-                return {
-                    "time":    last[0],
-                    "Cd":      last[1],
-                    "Cs":      last[2],
-                    "Cl":      last[3],
-                    "CmRoll":  last[4],
-                    "CmPitch": last[5],
-                    "CmYaw":   last[6],
-                }
-        except IndexError:
-            log.warning(f"Unexpected column count ({len(last)}) in forceCoeffs.dat")
-            return None
+                except: continue
+        return ref, col_map, rows

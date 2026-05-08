@@ -3,6 +3,7 @@ import logging
 
 from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import QApplication
+from PyQt6.QtGui import QIcon
 
 import config
 from core.logger_setup import configure_logging
@@ -22,6 +23,7 @@ def main():
         Qt.HighDpiScaleFactorRoundingPolicy.PassThrough
     )
     app = QApplication(sys.argv)
+    app.setWindowIcon(QIcon("logo.png"))
     app.setApplicationName("Rekon labs CFD")
     app.setOrganizationName("Rekon labs")
 

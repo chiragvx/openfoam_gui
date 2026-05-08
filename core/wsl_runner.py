@@ -57,6 +57,7 @@ class WSLRunner:
         cwd_windows: str | None = None,
         timeout: int = 7200,
         log_prefix: str = "",
+        on_line: callable = None,
     ) -> tuple[bool, str]:
         """
         Run a bash script inside WSL2, streaming output to the logger.
@@ -85,6 +86,10 @@ class WSLRunner:
                 line = line.rstrip()
                 if not line:
                     continue
+                
+                if on_line:
+                    on_line(line)
+                    
                 log.info(f"{log_prefix}{line}")
                 upper = line.upper()
                 if "ERROR" in upper or "FATAL" in upper:

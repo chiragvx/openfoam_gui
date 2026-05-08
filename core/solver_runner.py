@@ -10,32 +10,32 @@ class SolverRunner:
     _SCRIPT_SERIAL = """\
 set -e
 echo "=== foamRun (incompressibleFluid) ==="
-foamRun -solver incompressibleFluid > log.foamRun 2>&1
+foamRun -solver incompressibleFluid 2>&1 | tee log.foamRun
 echo "foamRun OK"
 
 echo "=== Post-Processing ==="
-foamPostProcess -func wallShearStress -latestTime > log.wallShearStress 2>&1 || echo "wallShearStress failed"
-foamPostProcess -func yPlus -latestTime > log.yPlus 2>&1 || echo "yPlus failed"
+foamPostProcess -func wallShearStress -latestTime 2>&1 | tee log.wallShearStress || echo "wallShearStress failed"
+foamPostProcess -func yPlus -latestTime 2>&1 | tee log.yPlus || echo "yPlus failed"
 echo "Post-processing OK"
 """
 
     _SCRIPT_PARALLEL = """\
 set -e
 echo "=== decomposePar ==="
-decomposePar -force > log.decomposePar.solver 2>&1
+decomposePar -force 2>&1 | tee log.decomposePar.solver
 echo "decomposePar OK"
 
 echo "=== foamRun ({n} cores, parallel) ==="
-mpirun --allow-run-as-root -np {n} foamRun -solver incompressibleFluid -parallel > log.foamRun 2>&1
+mpirun --allow-run-as-root -np {n} foamRun -solver incompressibleFluid -parallel 2>&1 | tee log.foamRun
 echo "foamRun OK"
 
 echo "=== reconstructPar ==="
-reconstructPar -latestTime > log.reconstructPar 2>&1
+reconstructPar -latestTime 2>&1 | tee log.reconstructPar
 echo "reconstructPar OK"
 
 echo "=== Post-Processing ==="
-foamPostProcess -func wallShearStress -latestTime > log.wallShearStress 2>&1 || echo "wallShearStress failed"
-foamPostProcess -func yPlus -latestTime > log.yPlus 2>&1 || echo "yPlus failed"
+foamPostProcess -func wallShearStress -latestTime 2>&1 | tee log.wallShearStress || echo "wallShearStress failed"
+foamPostProcess -func yPlus -latestTime 2>&1 | tee log.yPlus || echo "yPlus failed"
 echo "Post-processing OK"
 
 echo "=== removing processor directories ==="
@@ -48,7 +48,7 @@ echo "cleanup OK"
         self._runner   = WSLRunner(wsl_distro)
         self._n_cores  = max(1, n_cores)
 
-    def run(self) -> tuple[bool, str]:
+    def run(self, on_line: callable = None) -> tuple[bool, str]:
         log.info(f"Starting foamRun in {self._case_dir} ({self._n_cores} core(s))")
         if self._n_cores > 1:
             script = self._SCRIPT_PARALLEL.format(n=self._n_cores)
@@ -57,6 +57,7 @@ echo "cleanup OK"
         return self._runner.run_command(
             script,
             cwd_windows=self._case_dir,
-            timeout=3600,
+            timeout=7200,
             log_prefix="[SOLVER] ",
+            on_line=on_line,
         )

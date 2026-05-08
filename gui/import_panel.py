@@ -3,7 +3,8 @@ from pathlib import Path
 
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
-    QFileDialog, QGroupBox, QFormLayout, QCheckBox,
+    QFileDialog, QGroupBox, QFormLayout, QCheckBox, QDoubleSpinBox,
+    QColorDialog,
 )
 
 log = logging.getLogger(__name__)
@@ -26,10 +27,10 @@ class ImportPanel(QWidget):
         layout.addWidget(QLabel("<b>Import Geometry</b>"))
         layout.addWidget(QLabel("Export your model from Fusion 360 as STL or OBJ."))
 
-        self._mm_check = QCheckBox("Scale mm → m (Fusion 360 default unit)")
+        self._mm_check = QCheckBox("Scale mm \u2192 m (Fusion 360 default unit)")
         layout.addWidget(self._mm_check)
 
-        btn = QPushButton("Open File…")
+        btn = QPushButton("Open File\u2026")
         btn.clicked.connect(self._on_open)
         layout.addWidget(btn)
 
@@ -45,31 +46,50 @@ class ImportPanel(QWidget):
         self._info_box.setLayout(form)
         layout.addWidget(self._info_box)
 
-        self._orient_grp = QGroupBox("Reorient Model")
+        self._orient_grp = QGroupBox("Adjust Geometry")
         self._orient_grp.setVisible(False)
-        orient_vbox = QVBoxLayout()
-        orient_vbox.addWidget(QLabel("Rotate 90° about:"))
-        
-        row_x = QHBoxLayout()
-        btn_xp = QPushButton("X +90°"); btn_xp.clicked.connect(lambda: self._rotate("X", 90))
-        btn_xm = QPushButton("X -90°"); btn_xm.clicked.connect(lambda: self._rotate("X", -90))
-        row_x.addWidget(btn_xp); row_x.addWidget(btn_xm)
-        
-        row_y = QHBoxLayout()
-        btn_yp = QPushButton("Y +90°"); btn_yp.clicked.connect(lambda: self._rotate("Y", 90))
-        btn_ym = QPushButton("Y -90°"); btn_ym.clicked.connect(lambda: self._rotate("Y", -90))
-        row_y.addWidget(btn_yp); row_y.addWidget(btn_ym)
+        adjust_lay = QFormLayout()
 
-        row_z = QHBoxLayout()
-        btn_zp = QPushButton("Z +90°"); btn_zp.clicked.connect(lambda: self._rotate("Z", 90))
-        btn_zm = QPushButton("Z -90°"); btn_zm.clicked.connect(lambda: self._rotate("Z", -90))
-        row_z.addWidget(btn_zp); row_z.addWidget(btn_zm)
+        self._rot_x = QDoubleSpinBox(); self._rot_x.setRange(-360, 360); self._rot_x.setSuffix("\u00b0")
+        self._rot_y = QDoubleSpinBox(); self._rot_y.setRange(-360, 360); self._rot_y.setSuffix("\u00b0")
+        self._rot_z = QDoubleSpinBox(); self._rot_z.setRange(-360, 360); self._rot_z.setSuffix("\u00b0")
+        
+        rot_btn = QPushButton("Apply Rotations")
+        rot_btn.clicked.connect(self._on_apply_rotations)
+        
+        adjust_lay.addRow("Rotate X:", self._rot_x)
+        adjust_lay.addRow("Rotate Y:", self._rot_y)
+        adjust_lay.addRow("Rotate Z:", self._rot_z)
+        adjust_lay.addRow("", rot_btn)
+        
+        # Simple spacer
+        adjust_lay.addRow(QLabel(""))
+        
+        self._scale_val = QDoubleSpinBox()
+        self._scale_val.setRange(0.0001, 10000.0)
+        self._scale_val.setValue(1.0)
+        self._scale_val.setSingleStep(0.1)
+        self._scale_val.setDecimals(4)
+        
+        scale_btn = QPushButton("Apply Scale")
+        scale_btn.clicked.connect(self._on_apply_scale)
+        
+        adjust_lay.addRow("Scale Factor:", self._scale_val)
+        adjust_lay.addRow("", scale_btn)
 
-        orient_vbox.addLayout(row_x)
-        orient_vbox.addLayout(row_y)
-        orient_vbox.addLayout(row_z)
-        self._orient_grp.setLayout(orient_vbox)
+        self._orient_grp.setLayout(adjust_lay)
         layout.addWidget(self._orient_grp)
+
+        # Model Appearance
+        app_grp = QGroupBox("Model Appearance")
+        app_lay = QHBoxLayout()
+        app_lay.addWidget(QLabel("Surface Color:"))
+        self._color_btn = QPushButton("Select Color")
+        self._color_btn.clicked.connect(self._on_choose_model_color)
+        app_lay.addWidget(self._color_btn)
+        app_lay.addStretch()
+        app_grp.setLayout(app_lay)
+        layout.addWidget(app_grp)
 
         layout.addStretch()
         self.refresh_units()
@@ -84,36 +104,83 @@ class ImportPanel(QWidget):
             info = proc.get_info(self._path)
             u = SettingsManager.get("units")
             self._lbl_bounds.setText(
-                f"X {UnitConverter.format_length(info['xmin'], u)} – {UnitConverter.format_length(info['xmax'], u)} | "
-                f"Y {UnitConverter.format_length(info['ymin'], u)} – {UnitConverter.format_length(info['ymax'], u)} | "
-                f"Z {UnitConverter.format_length(info['zmin'], u)} – {UnitConverter.format_length(info['zmax'], u)}"
+                f"X {UnitConverter.format_length(info['xmin'], u)} \u2013 {UnitConverter.format_length(info['xmax'], u)} | "
+                f"Y {UnitConverter.format_length(info['ymin'], u)} \u2013 {UnitConverter.format_length(info['ymax'], u)} | "
+                f"Z {UnitConverter.format_length(info['zmin'], u)} \u2013 {UnitConverter.format_length(info['zmax'], u)}"
             )
         except Exception:
             pass
 
 
-    def _rotate(self, axis: str, degrees: float):
+    def _on_apply_rotations(self):
         if not self._path:
             return
-        self._mw.set_status(f"Rotating model {axis} {degrees}°…")
+        
+        rx = self._rot_x.value()
+        ry = self._rot_y.value()
+        rz = self._rot_z.value()
+        
+        if rx == 0 and ry == 0 and rz == 0:
+            return
+
+        self._mw.set_status("Applying rotations\u2026")
         try:
             from core.geometry import GeometryProcessor
             proc = GeometryProcessor()
-            proc.rotate(self._path, axis, degrees)
             
-            # Refresh info and viewport
-            info = proc.get_info(self._path)
-            u = SettingsManager.get("units")
-            self._lbl_bounds.setText(
-                f"X {UnitConverter.format_length(info['xmin'], u)} – {UnitConverter.format_length(info['xmax'], u)} | "
-                f"Y {UnitConverter.format_length(info['ymin'], u)} – {UnitConverter.format_length(info['ymax'], u)} | "
-                f"Z {UnitConverter.format_length(info['zmin'], u)} – {UnitConverter.format_length(info['zmax'], u)}"
-            )
-            self._mw.viewport.show_geometry(self._path)
-            self._mw.set_status("Rotation applied")
+            if rx != 0: proc.rotate(self._path, "X", rx)
+            if ry != 0: proc.rotate(self._path, "Y", ry)
+            if rz != 0: proc.rotate(self._path, "Z", rz)
+            
+            # Reset values to 0 after applying
+            self._rot_x.setValue(0)
+            self._rot_y.setValue(0)
+            self._rot_z.setValue(0)
+            
+            self._refresh_after_edit()
+            self._mw.set_status("Rotations applied")
         except Exception as exc:
             log.error(f"Rotation failed: {exc}")
             self._mw.set_status(f"Rotation error: {exc}")
+
+    def _on_apply_scale(self):
+        if not self._path:
+            return
+        
+        factor = self._scale_val.value()
+        if factor == 1.0:
+            return
+
+        self._mw.set_status(f"Scaling by {factor}\u2026")
+        try:
+            from core.geometry import GeometryProcessor
+            proc = GeometryProcessor()
+            proc.scale(self._path, factor)
+            
+            # Reset to 1.0
+            self._scale_val.setValue(1.0)
+            
+            self._refresh_after_edit()
+            self._mw.set_status("Scale applied")
+        except Exception as exc:
+            log.error(f"Scaling failed: {exc}")
+            self._mw.set_status(f"Scaling error: {exc}")
+
+    def _refresh_after_edit(self):
+        """Update info labels and viewport after geometry modification."""
+        from core.geometry import GeometryProcessor
+        proc = GeometryProcessor()
+        info = proc.get_info(self._path)
+        u = SettingsManager.get("units")
+        self._lbl_bounds.setText(
+            f"X {UnitConverter.format_length(info['xmin'], u)} \u2013 {UnitConverter.format_length(info['xmax'], u)} | "
+            f"Y {UnitConverter.format_length(info['ymin'], u)} \u2013 {UnitConverter.format_length(info['ymax'], u)} | "
+            f"Z {UnitConverter.format_length(info['zmin'], u)} \u2013 {UnitConverter.format_length(info['zmax'], u)}"
+        )
+        self._mw.viewport.show_geometry(self._path)
+        # Re-add wind arrow
+        cond = self._mw.get_flight_conditions()
+        self._mw.viewport.show_wind_arrow(cond["airspeed"], cond["aoa_deg"])
 
     def _on_open(self):
         path, _ = QFileDialog.getOpenFileName(
@@ -128,7 +195,7 @@ class ImportPanel(QWidget):
         if not path:
             return
             
-        self._mw.set_status("Processing geometry…")
+        self._mw.set_status("Processing geometry\u2026")
         try:
             from core.geometry import GeometryProcessor
             proc = GeometryProcessor()
@@ -139,9 +206,9 @@ class ImportPanel(QWidget):
             self._lbl_name.setText(Path(path).name)
             u = SettingsManager.get("units")
             self._lbl_bounds.setText(
-                f"X {UnitConverter.format_length(info['xmin'], u)} – {UnitConverter.format_length(info['xmax'], u)} | "
-                f"Y {UnitConverter.format_length(info['ymin'], u)} – {UnitConverter.format_length(info['ymax'], u)} | "
-                f"Z {UnitConverter.format_length(info['zmin'], u)} – {UnitConverter.format_length(info['zmax'], u)}"
+                f"X {UnitConverter.format_length(info['xmin'], u)} \u2013 {UnitConverter.format_length(info['xmax'], u)} | "
+                f"Y {UnitConverter.format_length(info['ymin'], u)} \u2013 {UnitConverter.format_length(info['ymax'], u)} | "
+                f"Z {UnitConverter.format_length(info['zmin'], u)} \u2013 {UnitConverter.format_length(info['zmax'], u)}"
             )
             self._lbl_tris.setText(f"{info['triangles']:,}")
             self._info_box.setVisible(True)
@@ -158,3 +225,10 @@ class ImportPanel(QWidget):
 
     def get_geometry_path(self) -> str | None:
         return self._path
+
+    def _on_choose_model_color(self):
+        color = QColorDialog.getColor()
+        if color.isValid():
+            cname = color.name()
+            self._color_btn.setStyleSheet(f"background: {cname}; color: {'white' if color.lightness() < 128 else 'black'};")
+            self._mw.viewport.set_model_color(cname)

@@ -16,9 +16,18 @@ env/
 
 # Logs
 logs/
+*.log
 
 # OpenFOAM case output
 cases/
+studies/
+
+# Local settings and AI metadata
+settings.json
+.claude/
+aero_summary.csv
+PLAN.md
+improvements_doc_new.md
 
 # PyInstaller
 *.manifest
@@ -32,3 +41,4 @@ cases/
 Thumbs.db
 desktop.ini
 .DS_Store
+

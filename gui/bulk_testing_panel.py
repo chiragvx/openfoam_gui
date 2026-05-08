@@ -62,7 +62,7 @@ class _BatchWorker(QThread):
                 # 3. Generate Mesh
                 self.log_msg.emit(f"Generating mesh for {run_name}...")
                 mesher = MeshManager(case_dir, config.WSL_DISTRO, self._mesh_settings.get("n_cores", 1))
-                m_ok, m_msg = mesher.run()
+                m_ok, m_msg = mesher.run(mesher=self._mesh_settings.get("mesher", "snappy"))
                 if not m_ok:
                     self.log_msg.emit(f"Mesh failed for {run_name}: {m_msg}")
                     continue
@@ -252,13 +252,8 @@ class BulkTestingPanel(QWidget):
         self._progress.setValue(0)
 
         # Gather settings
-        mesh_settings = {
-            "refinement_min": self._mw.mesh_panel._ref_min.value(),
-            "refinement_max": self._mw.mesh_panel._ref_max.value(),
-            "surface_layers": self._mw.mesh_panel._layers.value(),
-            "n_cores": self._mw.solver_panel.get_n_cores(),
-            "end_time": self._mw.solver_panel._iters.value()
-        }
+        mesh_settings = self._mw.mesh_panel.get_settings()
+        mesh_settings["end_time"] = self._mw.solver_panel._iters.value()
 
         solver_settings = {
             "end_time": self._mw.solver_panel._iters.value()

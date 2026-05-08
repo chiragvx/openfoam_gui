@@ -52,20 +52,35 @@ rm -rf processor*
 echo "cleanup OK"
 """
 
+    _CFMESH_SCRIPT = """\
+set -e
+echo "=== cartesianMesh ==="
+cartesianMesh > log.cartesianMesh 2>&1
+echo "cartesianMesh OK"
+"""
+
     def __init__(self, case_dir: str, wsl_distro: str | None, n_cores: int = 1):
         self._case_dir = case_dir
         self._runner   = WSLRunner(wsl_distro)
         self._n_cores  = max(1, n_cores)
 
-    def run(self) -> tuple[bool, str]:
-        log.info(f"Starting meshing pipeline ({self._n_cores} core(s))")
-        if self._n_cores > 1:
+    def run(self, mesher: str = "snappy") -> tuple[bool, str]:
+        log.info(f"Starting {mesher} meshing pipeline ({self._n_cores} core(s))")
+        
+        if mesher == "cfmesh":
+            # Check if cartesianMesh exists in WSL
+            ok, out = self._runner.run_command("which cartesianMesh", log_prefix="[CHECK] ")
+            if not ok:
+                return False, "cartesianMesh command not found in WSL. Please install cfMesh first."
+            script = self._CFMESH_SCRIPT
+        elif self._n_cores > 1:
             script = self._SCRIPT_PARALLEL.format(n=self._n_cores)
         else:
             script = self._SCRIPT_SERIAL
+
         return self._runner.run_command(
             script,
             cwd_windows=self._case_dir,
             timeout=1800,
-            log_prefix="[MESH] ",
+            log_prefix=f"[{mesher.upper()}] ",
         )

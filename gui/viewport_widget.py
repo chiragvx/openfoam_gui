@@ -78,6 +78,13 @@ class ViewportWidget(QWidget):
         self._ground_btn.clicked.connect(self.toggle_ground_plane)
         layout.addWidget(self._ground_btn)
 
+        layout.addSpacing(10)
+        self._parallel_btn = QPushButton("Ortho")
+        self._parallel_btn.setCheckable(True)
+        self._parallel_btn.setToolTip("Toggle between Perspective and Orthographic projection")
+        self._parallel_btn.clicked.connect(self.toggle_parallel_projection)
+        layout.addWidget(self._parallel_btn)
+
         layout.addStretch()
 
         # --- Representation Modes (Right Side) ---
@@ -206,12 +213,42 @@ class ViewportWidget(QWidget):
             self._plotter.interactor.SetInteractorStyle(style)
             
         # Add high-quality lighting
-        # self._plotter.enable_eye_dome_lighting() # Disabled due to OpenGL framebuffer errors on some systems
         self._plotter.enable_lightkit()
+        try:
+            self._plotter.enable_shadows()
+        except: pass
 
         
-        # Disable default keyboard shortcuts (w, s, r, etc.)
+        # Hard-disable default VTK/PyVista shortcuts that can close the window
+        self._plotter.add_key_event('q', lambda: None)
+        self._plotter.add_key_event('e', lambda: None)
+        self._plotter.add_key_event('Q', lambda: None)
+        self._plotter.add_key_event('E', lambda: None)
+        
+        # Disable the interactor's own 'q'/'e' logic by removing observers if possible
+        if hasattr(self._plotter, "iren"):
+            self._plotter.iren.interactor.RemoveObservers("CharEvent")
+            self._plotter.iren.interactor.RemoveObservers("KeyPressEvent")
+        elif hasattr(self._plotter, "interactor"):
+            self._plotter.interactor.RemoveObservers("CharEvent")
+            self._plotter.interactor.RemoveObservers("KeyPressEvent")
+
         self._plotter.key_press_event = lambda e: None
+
+    def set_model_color(self, color: str):
+        """Update the aircraft model color in the scene."""
+        if self._plotter is None:
+            return
+        
+        # Check both geometry model and results aircraft mesh
+        for actor_name in ["model", "ac_surface"]:
+            if actor_name in self._plotter.actors:
+                actor = self._plotter.actors[actor_name]
+                if hasattr(actor, "GetProperty"):
+                    prop = actor.GetProperty()
+                    rgb = pv.Color(color).float_rgb
+                    prop.SetColor(rgb)
+        self._plotter.render()
 
 
 
@@ -258,7 +295,8 @@ class ViewportWidget(QWidget):
                 mesh, color="#cccccc", opacity=1.0, 
                 show_edges=True, edge_color="#444444", line_width=1,
                 smooth_shading=True,
-                specular=0.5, specular_power=20,
+                specular=0.8, specular_power=40, # Increased for better highlights
+                ambient=0.1, diffuse=0.9,
                 name="model"
             )
 
@@ -285,6 +323,8 @@ class ViewportWidget(QWidget):
         try:
             foam_file = str(Path(case_dir) / "case.foam")
             reader = pv.OpenFOAMReader(foam_file)
+            reader.enable_all_cell_arrays()
+            reader.enable_all_point_arrays()
             if not reader.time_values:
                 log.warning("No time steps found in results")
                 return
@@ -304,7 +344,9 @@ class ViewportWidget(QWidget):
                 if block is None or block.n_cells == 0:
                     continue
 
-                if name == "aircraft":
+                is_domain = any(x in name.lower() for x in ["inlet", "outlet", "wall", "front", "back", "top", "bottom", "ground"])
+                
+                if name == "aircraft" or not is_domain:
                     aircraft_bounds = list(block.bounds)
                     self._plotter.add_mesh(
                         block,
@@ -313,7 +355,7 @@ class ViewportWidget(QWidget):
                         show_scalar_bar=True,
                         smooth_shading=True,
                         specular=0.3,
-                        name="ac_surface",
+                        name=f"ac_{name}",
                     )
 
                 else:
@@ -345,23 +387,31 @@ class ViewportWidget(QWidget):
             log.error(f"Viewport results load error: {exc}")
 
     # ------------------------------------------------------------------
-    def add_streamlines_mesh(self, stream):
+    def add_streamlines_mesh(self, stream, width: int = 2, color: str | None = None):
         """Called on the main thread once the worker has computed the streamlines."""
         if self._plotter is None:
             return
         try:
-            self._plotter.add_mesh(
-                stream,
-                scalars="U",
-                cmap="coolwarm",
-                line_width=2,
-                render_lines_as_tubes=True,
-                name="streamlines",
-                reset_camera=False,
-            )
+            # If color is provided, we disable scalars mapping (colormap)
+            kwargs = {
+                "line_width": width,
+                "render_lines_as_tubes": True,
+                "name": "streamlines",
+                "reset_camera": False,
+            }
+            
+            if color:
+                kwargs["color"] = color
+                kwargs["scalars"] = None
+                kwargs["show_scalar_bar"] = False
+            else:
+                kwargs["scalars"] = "U"
+                kwargs["cmap"] = "coolwarm"
+                kwargs["show_scalar_bar"] = True
 
+            self._plotter.add_mesh(stream, **kwargs)
             self._plotter.render()
-            log.info("Streamlines added to viewport")
+            log.info(f"Streamlines added to viewport (width={width}, color={color})")
         except Exception as exc:
             log.error(f"add_streamlines_mesh: {exc}")
 
@@ -489,6 +539,22 @@ class ViewportWidget(QWidget):
             self._hide_ground_plane()
         else:
             self._show_ground_plane()
+
+    def toggle_parallel_projection(self):
+        if self._plotter is None:
+            return
+        
+        is_parallel = self._parallel_btn.isChecked()
+        if is_parallel:
+            self._plotter.enable_parallel_projection()
+            self._parallel_btn.setText("Persp")
+            log.info("Viewport: Enabled parallel (orthographic) projection")
+        else:
+            self._plotter.disable_parallel_projection()
+            self._parallel_btn.setText("Ortho")
+            log.info("Viewport: Enabled perspective projection")
+        
+        self._plotter.render()
 
     def _update_dimension_labels(self, b: list):
         if self._plotter is None:
